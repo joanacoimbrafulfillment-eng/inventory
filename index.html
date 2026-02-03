@@ -66,17 +66,17 @@
         .modal-content { background:#fff; margin:5% auto; padding:20px; width:75%; border-radius:10px; max-height:80vh; overflow-y:auto; }
     
         /* v50: quantity color bars + legend */
-        .qty-wrap { display:flex; flex-direction:column; gap:6px; }
-        .qty-num { font-weight:700; }
-        .qty-bar { height:8px; border-radius:6px; background:#e0e0e0; }
+        .qty-wrap { display:flex; flex-direction:column; gap:4px; }
+        .qty-num { font-weight:700; font-size:1.25em; color:#000; line-height:1; }
+        .qty-bar { height:4px; border-radius:4px; background:#e0e0e0; }
         .qty-neg { background:#ff1744; }          /* < 0 vivid red */
         .qty-low { background:#ff8a80; }          /* 0-10 light red */
         .qty-mid { background:#fff59d; }          /* 11-199 light yellow */
         .qty-good { background:#b9f6ca; }         /* 200-500 light green */
         .qty-high { background:#81d4fa; }         /* 501-1000+ light blue */
         .legend { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:10px 0 18px; }
-        .legend-item { display:flex; align-items:center; gap:8px; font-size:13px; color:#444; background:#fafafa; border:1px solid #eee; padding:6px 10px; border-radius:999px; }
-        .legend-swatch { width:18px; height:10px; border-radius:6px; border:1px solid rgba(0,0,0,.08); }
+        .legend-item { display:flex; align-items:center; gap:8px; font-size:12px; color:#444; background:#fafafa; border:1px solid #eee; padding:5px 9px; border-radius:999px; }
+        .legend-swatch { width:12px; height:8px; border-radius:4px; border:1px solid rgba(0,0,0,.08); }
 
     </style>
 </head>
@@ -380,9 +380,12 @@
     },
     subscribeDocData(pathParts, cb) {
       const ref = doc(db, ...pathParts);
+      window.fb.lastError = null;
       return onSnapshot(ref, (snap) => {
+        window.fb.lastError = null;
         cb(snap.exists() ? snap.data() : null);
       }, (err) => {
+        window.fb.lastError = err;
         console.error('Firestore subscribe failed', err);
         cb(null);
       });
@@ -394,8 +397,10 @@
   function roleFromEmail(email){
     if (!email) return "none";
     const e = String(email).toLowerCase().trim();
-    if (e.endsWith(".pt")) return "pt";
-    if (e.endsWith(".pl")) return "pl";
+    // Support both full domains (e.g., user@empresa.pt / user@empresa.pl)
+    // and very short domains (e.g., user@pt / user@pl) if you use them internally.
+    if (e.endsWith(".pt") || e.endsWith("@pt")) return "pt";
+    if (e.endsWith(".pl") || e.endsWith("@pl")) return "pl";
     return "none";
   }
 
@@ -554,6 +559,15 @@
         if (!sku || isNaN(qty)) return null;
         return { sku, qty };
     }
+
+    // --- Auth / Actor helper (used in logs/movements + exports) ---
+    function currentActorEmail() {
+        try { return window.fb?.auth?.currentUser?.email || ''; } catch(e) { return ''; }
+    }
+    function currentActorUid() {
+        try { return window.fb?.auth?.currentUser?.uid || ''; } catch(e) { return ''; }
+    }
+
 
     // --- CSV / Export helpers (Excel-friendly ';' delimiter) ---
     const CSV_DELIM = ';';
@@ -718,7 +732,11 @@
             products,
             logs,
             createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
+                updatedBy: currentActorEmail(),
+                updatedUid: currentActorUid(),
+                updatedBy: currentActorEmail(),
+                updatedUid: currentActorUid()
         });
 
         await loadMonthData();
@@ -858,6 +876,16 @@
         } else {
             rows = buildGeneralViewItems();
         }
+        if (userRole === 'pl' && rows.length === 0) {
+            const err = window.fb?.lastError;
+            const msg = err ? ('Sem acesso a dados (regras Firestore). Erro: ' + (err.message || err)) :
+                              'Ainda não existe snapshot do General para este mês. Um utilizador .pt precisa abrir/guardar este mês uma vez para publicar.';
+            bodyG.innerHTML = `<tr><td colspan="4" style="padding:14px; background:#fff3cd; border:1px solid #ffeeba; border-radius:10px;">
+                ${msg}
+            </td></tr>`;
+            return;
+        }
+
 
         rows.forEach(({sku, real, amsped, transit}) => {
             bodyG.innerHTML += `<tr>
@@ -951,7 +979,7 @@
         const sku = document.getElementById(prefix + 'Sku').value.trim();
         const qty = parseInt(document.getElementById(prefix + 'Qty').value);
         if(!date || !sku || isNaN(qty)) return alert("Check fields");
-        logs.push({ date, sku, qty, status, id: Date.now() });
+        logs.push({ date, sku, qty, status, id: Date.now(), by: currentActorEmail(), uid: currentActorUid() });
         save(); renderAll();
         document.getElementById(prefix + 'Sku').value = ''; document.getElementById(prefix + 'Qty').value = '';
     }
@@ -970,7 +998,7 @@
             const parsed = parseBulkLine(line);
             if(!parsed) return;
             const { sku, qty } = parsed;
-            logs.push({ date, sku, qty: Math.abs(qty), status, id: base + i });
+            logs.push({ date, sku, qty: Math.abs(qty), status, id: base + i, by: currentActorEmail(), uid: currentActorUid() });
         });
         save(); renderAll();
         if(textEl) textEl.value = "";
@@ -982,7 +1010,7 @@
         if(!isNaN(qty) && date) {
             logs[idx].status = 'RECEIVED'; logs[idx].arrivalDate = date; logs[idx].receivedQty = qty;
             const p = findProd(logs[idx].sku);
-            if(p) p.movements.push({ type: 'RECEIVED', qty, date, logId: logs[idx].id });
+            if(p) p.movements.push({ type: 'RECEIVED', qty, date, logId: logs[idx].id, by: currentActorEmail(), uid: currentActorUid() });
             save(); renderAll();
         }
     }
@@ -1081,14 +1109,14 @@
             const parsed = parseBulkLine(line); if(!parsed) return;
             const { sku, qty } = parsed;
             const prod = findProd(sku);
-            if(prod) prod.movements.push({ type, qty: (type==='adjust'?qty:Math.abs(qty)), date });
+            if(prod) prod.movements.push({ type, qty: (type==='adjust'?qty:Math.abs(qty)), date, by: currentActorEmail(), uid: currentActorUid() });
         });
         save(); renderAll(); document.getElementById('input' + k).value = "";
     }
 
     function addSingleFromSelect(id) {
         const t = document.getElementById('type'+id).value, s = document.getElementById('single'+id+'Sku').value.trim(), q = parseInt(document.getElementById('single'+id+'Qty').value), d = document.getElementById('date'+id).value;
-        const p = findProd(s); if(p&&!isNaN(q)) { p.movements.push({type:t, qty:Math.abs(q), date:d}); save(); renderAll(); document.getElementById('single'+id+'Sku').value=""; }
+        const p = findProd(s); if(p&&!isNaN(q)) { p.movements.push({type:t, qty:Math.abs(q), date:d, by: currentActorEmail(), uid: currentActorUid() }); save(); renderAll(); document.getElementById('single'+id+'Sku').value=""; }
     }
 
 
@@ -1106,7 +1134,7 @@ function processBulkFromSelect(id) {
         const parsed = parseBulkLine(line); if(!parsed) return;
         const { sku, qty } = parsed;
         const p = findProd(sku);
-        if(p) p.movements.push({ type: t, qty: Math.abs(qty), date: d });
+        if(p) p.movements.push({ type: t, qty: Math.abs(qty), date: d, by: currentActorEmail(), uid: currentActorUid() });
     });
 
     save(); renderAll();
@@ -1507,7 +1535,7 @@ function addWarehouseRow() {
                 const tipo = m.type;
                 const qty = m.qty ?? 0;
                 const note = m.note || '';
-                rows.push({ date, month: currentMonth, produto, tab, tipo, qty, note });
+                rows.push({ date, month: currentMonth, produto, tab, tipo, qty, note, by: m.by || '', uid: m.uid || '' });
             });
         });
 
@@ -1519,7 +1547,7 @@ function addWarehouseRow() {
             const tipo = l.status || '';
             const qty = (l.status === 'RECEIVED') ? (l.receivedQty ?? l.qty ?? 0) : (l.qty ?? 0);
             const note = l.status === 'RECEIVED' ? 'Arrival: ' + (l.arrivalDate || '') : '';
-            rows.push({ date, month: currentMonth, produto, tab, tipo, qty, note });
+            rows.push({ date, month: currentMonth, produto, tab, tipo, qty, note, by: l.by || '', uid: l.uid || '' });
         });
 
         // sort
@@ -1585,7 +1613,7 @@ function addWarehouseRow() {
             summary.innerHTML = `<b>Total records:</b> ${rows.length} &nbsp; | &nbsp; <b>Days:</b> ${days.length}`;
         } else {
             head.innerHTML = `<tr>
-                <th>Date</th><th>Produto</th><th>Separador</th><th>Tipo</th><th>Qty</th><th>Nota</th>
+                <th>Date</th><th>Produto</th><th>Separador</th><th>Tipo</th><th>Qty</th><th>By</th><th>Nota</th>
             </tr>`;
             body.innerHTML = rows.map(r => `<tr>
                 <td>${r.date || ''}</td>
@@ -1593,6 +1621,7 @@ function addWarehouseRow() {
                 <td>${r.tab || ''}</td>
                 <td>${r.tipo || ''}</td>
                 <td>${r.qty ?? ''}</td>
+                <td>${(r.by || '').toString()}</td>
                 <td>${(r.note || '').toString()}</td>
             </tr>`).join('');
             summary.innerHTML = `<b>Total records:</b> ${rows.length}`;
@@ -1602,7 +1631,7 @@ function addWarehouseRow() {
     function exportMovementsCSV() {
         const rows = getAllMovementsFiltered();
         if (!rows.length) return alert('No movements to export for this filter.');
-        const headers = ['month','date','produto','tab','tipo','qty','note'];
+        const headers = ['month','date','produto','tab','tipo','qty','by','note'];
         downloadCSV(headers, rows, `movements_${currentMonth}.csv`);
     }
 
