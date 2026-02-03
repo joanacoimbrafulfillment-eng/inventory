@@ -133,6 +133,10 @@
 
         <!-- 1. GENERAL -->
         <div id="general" class="tab-content active">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div id="generalUpdatedAt" style="font-size:12px; color:#666;"></div>
+                <button class="btn btn-secondary" style="padding:6px 10px; font-size:12px;" onclick="reconnectGeneral()">🔄 Reconnect</button>
+            </div>
             <div id="dash-general" class="dashboard-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px;"></div>
 
             <div class="legend" id="qtyLegend">
@@ -218,7 +222,6 @@
                         <textarea id="inputOrdBulk" class="bulk-area" style="height:90px" placeholder="Bulk: Produto QTY"></textarea>
                         <button class="btn btn-primary" onclick="processBulkOrderLog('ORDER')">Bulk Process</button>
                     </div>
-                    </div>
 
                     <div class="section-box">
                         <h3>🚢 3. Register Shipment (SENT)</h3>
@@ -230,7 +233,6 @@
                         </div>
                         <textarea id="inputShipBulk" class="bulk-area" style="height:90px" placeholder="Bulk: Produto QTY"></textarea>
                         <button class="btn btn-warning" onclick="processBulkOrderLog('SENT')">Bulk Process</button>
-                    </div>
                     </div>
 
                     <div class="section-box">
@@ -805,6 +807,9 @@
         if (generalUnsub) { try { generalUnsub(); } catch(e){} }
         generalUnsub = window.fb.subscribeDocData(['general', currentMonth], (data) => {
             generalViewItems = (data && Array.isArray(data.items)) ? data.items : [];
+            const upd = (data && data.updatedAt) ? data.updatedAt : null;
+            const el = document.getElementById('generalUpdatedAt');
+            if (el) el.textContent = upd ? ('Last update: ' + new Date(upd).toLocaleString()) : 'Last update: —';
             // ensure main UI visible for PL
             const init = document.getElementById('initView');
             const main = document.getElementById('mainInterface');
@@ -813,6 +818,12 @@
             renderGeneral();
         });
     }
+
+    function reconnectGeneral(){
+        // Forces re-subscribe (useful if rules/domain were updated)
+        startGeneralRealtime();
+    }
+
     async function flushSaveMonth() {
         try {
             if (!window.fb || !currentMonth) return;
@@ -823,6 +834,8 @@
                 updatedAt: new Date().toISOString()
             };
             await window.fb.setDocData(['months', currentMonth], payload);
+            // also publish General view immediately for PL realtime
+            await flushSaveGeneralView();
             lastSavedAt = Date.now();
             // Keep the public General view in sync for .pl accounts
             queueSaveGeneralView(true);
