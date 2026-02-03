@@ -45,11 +45,11 @@
         .btn-danger { background: #e74c3c; color: white; }
         
         .stock-val { font-weight: bold; }
-        .real-col { color: #2ecc71; } 
-        .amsped-col { color: #e67e22; }
-        .transit-val { color: #0984e3; font-weight: bold; }
-        .confirm-col { color: #8e44ad; font-weight: bold; }
-        .order-col { color: #007bff; font-weight: bold; }
+        .real-col { color: #000 !important; font-weight: bold; } 
+        .amsped-col { color: #000 !important; font-weight: bold; }
+        .transit-val { color: #000 !important; font-weight: bold; }
+        .confirm-col { color: #000 !important; font-weight: bold; }
+        .order-col { color: #000 !important; font-weight: bold; }
 
         /* Highlight for urgent orders */
         .urgent-row { background-color: #fff2f2 !important; border-left: 4px solid #ff7675; }
@@ -215,6 +215,9 @@
                             <input type="number" id="ordQty" class="input-single" style="width:70px" placeholder="Qty">
                             <button class="btn btn-primary" onclick="addOrderLog('ORDER')">Save Order</button>
                         </div>
+                        <textarea id="inputOrdBulk" class="bulk-area" style="height:90px" placeholder="Bulk: Produto QTY"></textarea>
+                        <button class="btn btn-primary" onclick="processBulkOrderLog('ORDER')">Bulk Process</button>
+                    </div>
                     </div>
 
                     <div class="section-box">
@@ -225,6 +228,9 @@
                             <input type="number" id="shipQty" class="input-single" style="width:70px" placeholder="Qty">
                             <button class="btn btn-warning" onclick="addOrderLog('SENT')">Register SENT</button>
                         </div>
+                        <textarea id="inputShipBulk" class="bulk-area" style="height:90px" placeholder="Bulk: Produto QTY"></textarea>
+                        <button class="btn btn-warning" onclick="processBulkOrderLog('SENT')">Bulk Process</button>
+                    </div>
                     </div>
 
                     <div class="section-box">
@@ -243,7 +249,7 @@
 
         <!-- OPERATIVE TABS (Returns, Internal, Picking, Amsped) -->
         <div id="returns" class="tab-content"><div class="section-box"><h3>🔄 Returns</h3><div class="entry-row"><select id="typeReturns" class="input-single"><option value="returns">Return</option><option value="refunds">Refund</option><option value="recovered">Recovered</option></select><input type="date" id="dateReturns" class="input-single today-date"><input type="text" list="productList" id="singleReturnsSku" class="input-single" style="width:250px"><input type="number" id="singleReturnsQty" class="input-single" style="width:70px" value="1"><button class="btn btn-info" onclick="addSingleFromSelect('Returns')">Update</button></div><textarea id="inputReturns" class="bulk-area" placeholder="Bulk: Produto QTY"></textarea><button class="btn btn-info" onclick="processBulkFromSelect('Returns')">Bulk Process</button><div class="recent-entries-box"><h4>🕒 Recent</h4><table id="recent-returns"></table></div></div></div>
-        <div id="internal" class="tab-content"><div class="section-box"><h3>🏢 Internal Use</h3><div class="entry-row"><select id="typeInternal" class="input-single"><option value="customerCare">Customer Care</option><option value="awards">Awards</option><option value="officeNeeds">Office Needs</option></select><input type="date" id="dateInternal" class="input-single today-date"><input type="text" list="productList" id="singleInternalSku" class="input-single" style="width:250px"><input type="number" id="singleInternalQty" class="input-single" style="width:70px" value="1"><button class="btn btn-danger" onclick="addSingleFromSelect('Internal')">Record</button></div><div class="recent-entries-box"><h4>🕒 Recent</h4><table id="recent-internal"></table></div></div></div>
+        <div id="internal" class="tab-content"><div class="section-box"><h3>🏢 Internal Use</h3><div class="entry-row"><select id="typeInternal" class="input-single"><option value="customerCare">Customer Care</option><option value="awards">Awards</option><option value="officeNeeds">Office Needs</option></select><input type="date" id="dateInternal" class="input-single today-date"><input type="text" list="productList" id="singleInternalSku" class="input-single" style="width:250px"><input type="number" id="singleInternalQty" class="input-single" style="width:70px" value="1"><button class="btn btn-danger" onclick="addSingleFromSelect('Internal')">Record</button></div><textarea id="inputInternal" class="bulk-area" placeholder="Bulk: Produto QTY"></textarea><button class="btn btn-danger" onclick="processBulkFromSelect('Internal')">Bulk Process</button><div class="recent-entries-box"><h4>🕒 Recent</h4><table id="recent-internal"></table></div></div></div>
         <div id="picking" class="tab-content"><div class="section-box"><h3>📦 Picking Out</h3><div class="entry-row"><input type="date" id="datePicking" class="input-single today-date"><input type="text" list="productList" id="singlePickingSku" class="input-single" style="width:250px"><input type="number" id="singlePickingQty" class="input-single" style="width:70px" value="1"><button class="btn btn-primary" onclick="addSingle('picking')">Add</button></div><textarea id="inputPicking" class="bulk-area"></textarea><button class="btn btn-primary" onclick="processBulk('picking')">Bulk Process</button><div class="recent-entries-box"><h4>🕒 Recent</h4><table id="recent-picking"></table></div></div></div>
         <div id="amsped" class="tab-content"><div class="section-box"><h3>🛒 Amsped Sales</h3><div class="entry-row"><input type="date" id="dateAmsped" class="input-single yesterday-date"><input type="text" list="productList" id="singleAmspedSku" class="input-single" style="width:250px"><input type="number" id="singleAmspedQty" class="input-single" style="width:70px" value="1"><button class="btn btn-primary" onclick="addSingle('amsped')">Add</button></div><textarea id="inputAmsped" class="bulk-area"></textarea><button class="btn btn-primary" onclick="processBulk('amsped')">Bulk Process</button><div class="recent-entries-box"><h4>🕒 Recent</h4><table id="recent-amsped"></table></div></div></div>
 
@@ -950,6 +956,26 @@
         document.getElementById(prefix + 'Sku').value = ''; document.getElementById(prefix + 'Qty').value = '';
     }
 
+    function processBulkOrderLog(status) {
+        const prefix = status === 'ORDER' ? 'ord' : 'ship';
+        const dateEl = document.getElementById(prefix + 'Date');
+        const date = dateEl ? dateEl.value : '';
+        const textEl = document.getElementById(status === 'ORDER' ? 'inputOrdBulk' : 'inputShipBulk');
+        const text = (textEl && textEl.value ? textEl.value : '').trim();
+        if(!date) return alert("Select a date first");
+        if(!text) return;
+        const lines = text.split('\n');
+        const base = Date.now();
+        lines.forEach((line, i) => {
+            const parsed = parseBulkLine(line);
+            if(!parsed) return;
+            const { sku, qty } = parsed;
+            logs.push({ date, sku, qty: Math.abs(qty), status, id: base + i });
+        });
+        save(); renderAll();
+        if(textEl) textEl.value = "";
+    }
+
     function receiveLog(idx) {
         const qty = parseInt(prompt("Confirmed Qty Received:", logs[idx].qty));
         const date = prompt("Arrival Date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
@@ -1065,6 +1091,29 @@
         const p = findProd(s); if(p&&!isNaN(q)) { p.movements.push({type:t, qty:Math.abs(q), date:d}); save(); renderAll(); document.getElementById('single'+id+'Sku').value=""; }
     }
 
+
+function processBulkFromSelect(id) {
+    // For tabs that have a type <select> (e.g., Returns): apply the selected type to all bulk lines.
+    const t = document.getElementById('type'+id).value;
+    const textEl = document.getElementById('input'+id);
+    const dateEl = document.getElementById('date'+id);
+    if(!textEl || !dateEl) return;
+    const text = (textEl.value || '').trim();
+    const d = dateEl.value;
+    if(!text) return;
+
+    text.split('\n').forEach(line => {
+        const parsed = parseBulkLine(line); if(!parsed) return;
+        const { sku, qty } = parsed;
+        const p = findProd(sku);
+        if(p) p.movements.push({ type: t, qty: Math.abs(qty), date: d });
+    });
+
+    save(); renderAll();
+    textEl.value = "";
+}
+
+
     function showHistory(i) {
         const p = products[i], b = document.getElementById('histBody'); b.innerHTML = '';
         p.movements.forEach((m, mi) => b.innerHTML += `<tr><td>${m.date}</td><td>${m.type}</td><td>${m.qty}</td><td>${m.note||''}</td><td><button class="btn btn-danger" onclick="products[${i}].movements.splice(${mi},1);save();showHistory(${i});renderAll()">X</button></td></tr>`);
@@ -1073,7 +1122,7 @@
 
     function renderMiniDash() {
         const pick = products.reduce((a,p)=>a+sum(p,'picking'),0), sales = products.reduce((a,p)=>a+sum(p,'amsped'),0), rec = products.reduce((a,p)=>a+sum(p,'RECEIVED'),0);
-        document.getElementById('dash-general').innerHTML = `<div class="stat-card"><h4>Received</h4><div class="value">${rec}</div></div><div class="stat-card"><h4>Transit</h4><div class="value" style="color:#0984e3">${logs.filter(l=>l.status==='SENT').reduce((a,c)=>a+c.qty,0)}</div></div>`;
+        document.getElementById('dash-general').innerHTML = `<div class="stat-card"><h4>Received</h4><div class="value">${rec}</div></div><div class="stat-card"><h4>Transit</h4><div class="value" style="color:#000">${logs.filter(l=>l.status==='SENT').reduce((a,c)=>a+c.qty,0)}</div></div>`;
     }
 
     function filterTable(tid, sid) { const q = document.getElementById(sid).value.toLowerCase(); document.querySelectorAll(`#${tid} tr`).forEach(r => r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none'); }
