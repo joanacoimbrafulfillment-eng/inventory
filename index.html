@@ -344,7 +344,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
   import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBvJIwx6KDSrwdnJ1o8vqvttsv9dzycY6g",
@@ -371,6 +371,15 @@
     async setDocData(pathParts, data) {
       const ref = doc(db, ...pathParts);
       await setDoc(ref, data, { merge: true });
+    },
+    subscribeDocData(pathParts, cb) {
+      const ref = doc(db, ...pathParts);
+      return onSnapshot(ref, (snap) => {
+        cb(snap.exists() ? snap.data() : null);
+      }, (err) => {
+        console.error('Firestore subscribe failed', err);
+        cb(null);
+      });
     },
     signInWithEmailAndPassword: (email, pass) => signInWithEmailAndPassword(auth, email, pass),
     signOut: () => signOut(auth),
@@ -491,7 +500,10 @@
     let warehouseItems = [];
     let allData = {};
     let userRole = 'pt';
+    let generalViewItems = [];
+    let generalUnsub = null;
     let saveTimer = null;
+    let generalSaveTimer = null;
     let lastSavedAt = 0;
 
     // Called by Firebase Auth module after login
@@ -504,6 +516,14 @@
         const mp = document.getElementById('monthPicker');
         if (mp) mp.value = currentMonth;
 
+        if (userRole === 'pl') {
+            // PL accounts: General-only, real-time from Firestore "general/{YYYY-MM}"
+            document.getElementById('initView').style.display = 'none';
+            document.getElementById('mainInterface').style.display = 'block';
+            startGeneralRealtime();
+            return;
+        }
+
         // Load warehouse master first (drives product list)
         await loadWarehouseFromFirestore();
         renderWarehouse();
@@ -511,6 +531,9 @@
 
         // Load selected month data
         await loadMonthData();
+
+        // Publish initial General view for this month (so .pl can see it)
+        queueSaveGeneralView(true);
     };
 
 
@@ -606,10 +629,19 @@
         if (warn) warn.style.display = (location.protocol === 'file:') ? '' : 'none';
     };
 
-    function changeMonth() { currentMonth = document.getElementById('monthPicker').value; loadMonthData(); }
+    function changeMonth() {
+        currentMonth = document.getElementById('monthPicker').value;
+        if (userRole === 'pl') {
+            startGeneralRealtime();
+        } else {
+            loadMonthData();
+            queueSaveGeneralView(true);
+        }
+    }
 
     async function loadMonthData() {
         if (!currentMonth) return;
+        if (userRole === 'pl') { startGeneralRealtime(); return; }
 
         // Fetch from Firestore
         let data = null;
@@ -699,6 +731,7 @@
         // Firestore save (debounced)
         allData[currentMonth] = { products, logs };
         queueSaveMonth();
+        queueSaveGeneralView(false);
     }
 
     function queueSaveMonth() {
@@ -708,6 +741,54 @@
         saveTimer = setTimeout(flushSaveMonth, 600);
     }
 
+
+    function buildGeneralViewItems() {
+        // Returns list: { sku, real, amsped, transit }
+        return (products || []).map(p => {
+            const real = calculateStock(p, 'real', logs);
+            const amsped = calculateStock(p, 'amsped', logs);
+            const transit = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT')
+                                .reduce((a,c)=>a + (Number(c.qty)||0), 0);
+            return { sku: p.sku, real: Number(real)||0, amsped: Number(amsped)||0, transit: Number(transit)||0 };
+        }).sort((a,b) => (a.real - b.real) || a.sku.localeCompare(b.sku, undefined, {numeric:true}));
+    }
+
+    function queueSaveGeneralView(immediate=false) {
+        if (!window.fb || !currentMonth) return;
+        if (userRole === 'pl') return; // PL can't write
+        if (generalSaveTimer) clearTimeout(generalSaveTimer);
+        const delay = immediate ? 10 : 700;
+        generalSaveTimer = setTimeout(flushSaveGeneralView, delay);
+    }
+
+    async function flushSaveGeneralView() {
+        try {
+            if (!window.fb || !currentMonth) return;
+            if (userRole === 'pl') return;
+            const items = buildGeneralViewItems();
+            await window.fb.setDocData(['general', currentMonth], {
+                items,
+                updatedAt: new Date().toISOString()
+            });
+        } catch (e) {
+            console.error('Firestore general view save failed', e);
+        }
+    }
+
+    function startGeneralRealtime() {
+        if (!window.fb || !currentMonth) return;
+        // subscribe (and replace previous)
+        if (generalUnsub) { try { generalUnsub(); } catch(e){} }
+        generalUnsub = window.fb.subscribeDocData(['general', currentMonth], (data) => {
+            generalViewItems = (data && Array.isArray(data.items)) ? data.items : [];
+            // ensure main UI visible for PL
+            const init = document.getElementById('initView');
+            const main = document.getElementById('mainInterface');
+            if (init) init.style.display = 'none';
+            if (main) main.style.display = 'block';
+            renderGeneral();
+        });
+    }
     async function flushSaveMonth() {
         try {
             if (!window.fb || !currentMonth) return;
@@ -719,6 +800,8 @@
             };
             await window.fb.setDocData(['months', currentMonth], payload);
             lastSavedAt = Date.now();
+            // Keep the public General view in sync for .pl accounts
+            queueSaveGeneralView(true);
         } catch (e) {
             console.error('Firestore save failed', e);
         }
@@ -755,19 +838,24 @@
     function renderGeneral() {
         const bodyG = document.getElementById('bodyGeneral'); bodyG.innerHTML = '';
 
-        // Sort by lowest Real Stock first (tie-breaker: Product name)
-        let sorted = products
-            .map(p => {
-                const real = calculateStock(p, 'real', logs);
-                const amsped = calculateStock(p, 'amsped', logs);
-                const transit = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT').reduce((a,c)=>a+c.qty,0);
-                return { p, real, amsped, transit };
-            })
-            .sort((a,b) => (a.real - b.real) || a.p.sku.localeCompare(b.p.sku, undefined, {numeric:true}));
+        // Data source:
+        // - PT: compute from products/logs
+        // - PL: read-only realtime snapshot from Firestore general/{YYYY-MM}
+        let rows = [];
+        if (userRole === 'pl') {
+            rows = (generalViewItems || []).map(it => ({
+                sku: it.sku,
+                real: Number(it.real) || 0,
+                amsped: Number(it.amsped) || 0,
+                transit: Number(it.transit) || 0
+            })).sort((a,b) => (a.real - b.real) || String(a.sku).localeCompare(String(b.sku), undefined, {numeric:true}));
+        } else {
+            rows = buildGeneralViewItems();
+        }
 
-        sorted.forEach(({p, real, amsped, transit}) => {
+        rows.forEach(({sku, real, amsped, transit}) => {
             bodyG.innerHTML += `<tr>
-                <td><b>${p.sku}</b></td>
+                <td><b>${sku}</b></td>
                 <td class="stock-val real-col">${qtyCell(real)}</td>
                 <td class="stock-val amsped-col">${qtyCell(amsped)}</td>
                 <td class="transit-val">${(transit||0)}</td>
