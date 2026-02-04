@@ -117,7 +117,6 @@
         <div class="tabs">
             <div class="tab-btn active" onclick="openTab('general')">📋 General</div>
             <div class="tab-btn" onclick="openTab('analytics')">📊 Analytics</div>
-            <div class="tab-btn" onclick="openTab('analysisPlus')">📈 Analysis+</div>
             <div class="tab-btn" onclick="openTab('shipments')">📦 Orders & Shipments</div>
             <div class="tab-btn" onclick="openTab('adjustments')">🔧 Adjustments</div>
             <div class="tab-btn" onclick="openTab('returns')">🔄 Returns & Recovered</div>
@@ -134,9 +133,6 @@
 
         <!-- 1. GENERAL -->
         <div id="general" class="tab-content active">
-            <div id="roleNotice" class="card" style="display:none; border:1px solid #ffd6d6; background:#fff5f5;">
-                <b>Acesso restrito.</b> Faz login com um email autorizado (.pt ou .pl).
-            </div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                 <div id="generalUpdatedAt" style="font-size:12px; color:#666;"></div>
                 <button class="btn btn-secondary" style="padding:6px 10px; font-size:12px;" onclick="reconnectGeneral()">🔄 Reconnect</button>
@@ -163,18 +159,6 @@
 
         <!-- 2. ANALYTICS -->
         <div id="analytics" class="tab-content">
-            
-            <div class="card" style="margin-bottom:20px;">
-                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-                    <div style="font-weight:800;">Exports (Analytics)</div>
-                    <div style="margin-left:auto; display:flex; gap:10px; flex-wrap:wrap;">
-                        <button class="btn btn-secondary" onclick="exportAnalyticsXLSX()">Export XLSX</button>
-                        <button class="btn btn-secondary" onclick="exportAnalyticsCSV()">Export CSV</button>
-                    </div>
-                </div>
-                <div class="small-note">Exports include per-product totals for the current month + daily picking series.</div>
-            </div>
-
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
                 <div style="grid-column: span 2; height: 350px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Daily Picking Activity</h3><canvas id="dailyChart"></canvas></div>
                 <div style="height: 300px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Top Sold</h3><canvas id="topSoldChart"></canvas></div>
@@ -187,61 +171,6 @@
         </div>
 
         <!-- 3. ORDERS & SHIPMENTS (PRIORITY SORTING v44) -->
-        
-        <div id="analysisPlus" class="tab-content">
-            <h2 style="margin-top:0;">📈 Analysis+ (Month / Year)</h2>
-            <div class="card" style="margin-bottom:20px;">
-                <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:end;">
-                    <div>
-                        <label style="font-weight:700;">View</label><br>
-                        <select id="apMode">
-                            <option value="month">Month (current)</option>
-                            <option value="year">Year (sum of months)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="font-weight:700;">Year</label><br>
-                        <select id="apYear"></select>
-                    </div>
-                    <div>
-                        <button class="btn btn-primary" onclick="renderAnalysisPlus()">Refresh</button>
-                    </div>
-                    <div style="margin-left:auto; display:flex; gap:10px; flex-wrap:wrap;">
-                        <button class="btn btn-secondary" onclick="exportAnalysisPlusXLSX()">Export XLSX</button>
-                        <button class="btn btn-secondary" onclick="exportAnalysisPlusCSV()">Export CSV</button>
-                    </div>
-                </div>
-                <div class="small-note" style="margin-top:8px;">
-                    Year mode = sum of all months found in Firestore for that year (collection <b>months</b>).
-                </div>
-            </div>
-
-            <div class="card" style="margin-bottom:20px;">
-                <h3 style="margin-top:0;">Summary (totals)</h3>
-                <table id="apSummaryTable">
-                    <thead>
-                        <tr><th>Category</th><th>Type/Status</th><th>Total Qty</th></tr>
-                    </thead>
-                    <tbody id="apSummaryBody"></tbody>
-                </table>
-            </div>
-
-            <div class="card">
-                <h3 style="margin-top:0;">By Product (net impact on Real Stock)</h3>
-                <div class="small-note">Net impact = + received/returns/recovered/adjust+ ; - amsped/b2b/picking/internal/adjust- . (Shipments SENT do not change stock; RECEIVED does via movements.)</div>
-                <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
-                    <input id="apSearch" placeholder="Search product..." oninput="renderAnalysisPlusTablesOnly()">
-                    <button class="btn btn-light" onclick="document.getElementById('apSearch').value='';renderAnalysisPlusTablesOnly()">Clear</button>
-                </div>
-                <table id="apProductTable" style="margin-top:10px;">
-                    <thead>
-                        <tr><th>Product</th><th>Net Real Δ</th><th>Received</th><th>Amsped</th><th>B2B</th><th>Picking</th><th>Internal</th><th>Adjustments</th></tr>
-                    </thead>
-                    <tbody id="apProductBody"></tbody>
-                </table>
-            </div>
-        </div>
-
         <div id="shipments" class="tab-content">
             <div class="split-layout">
                 <!-- Left: Support Table Sorted by Procurement Priority -->
@@ -508,8 +437,6 @@
 
   function applyRoleToTabs(role){
     // PL: only show General. PT: show all.
-    const notice = document.getElementById('roleNotice');
-    if (notice) notice.style.display = (role === 'none') ? '' : 'none';
     const tabBtns = Array.from(document.querySelectorAll(".tabs .tab-btn"));
     const tabContents = Array.from(document.querySelectorAll(".tab-content"));
 
@@ -526,15 +453,8 @@
     } else if (role === "pt"){
       tabBtns.forEach(btn => btn.style.display = "");
     } else {
-      // not allowed: show General tab (read-only) so user can at least see UI + login
-      tabBtns.forEach(btn => {
-        const isGeneral = btn.getAttribute("onclick")?.includes("openTab('general')");
-        btn.style.display = isGeneral ? "" : "none";
-      });
-      tabContents.forEach(c => c.id === "general" ? c.classList.add("active") : c.classList.remove("active"));
-      tabBtns.forEach(b => b.classList.remove("active"));
-      const g = tabBtns.find(btn => btn.style.display !== "none");
-      if (g) g.classList.add("active");
+      // not allowed
+      tabBtns.forEach(btn => btn.style.display = "none");
     }
   }
 
@@ -626,12 +546,6 @@
             // PL accounts: General-only, real-time from Firestore "general/{YYYY-MM}"
             document.getElementById('initView').style.display = 'none';
             document.getElementById('mainInterface').style.display = 'block';
-            // UI: PL only sees General tab
-            document.querySelectorAll('.tab-btn').forEach(b => {
-                b.style.display = (String(b.getAttribute('onclick')||'').includes("openTab('general')")) ? 'block' : 'none';
-            });
-            // Ensure General is open
-            document.querySelector(".tab-btn[onclick*=\"openTab('general')\"]")?.classList.add('active');
             startGeneralRealtime();
             return;
         }
@@ -786,12 +700,6 @@
             products.forEach(p => { if(p.toConfirm === undefined) p.toConfirm = 0; });
             document.getElementById('initView').style.display = 'none';
             document.getElementById('mainInterface').style.display = 'block';
-            // UI: PL only sees General tab
-            document.querySelectorAll('.tab-btn').forEach(b => {
-                b.style.display = (String(b.getAttribute('onclick')||'').includes("openTab('general')")) ? 'block' : 'none';
-            });
-            // Ensure General is open
-            document.querySelector(".tab-btn[onclick*=\"openTab('general')\"]")?.classList.add('active');
             allData[currentMonth] = { products, logs };
             await loadOpenSentLogsFromPreviousMonths();
             renderAll();
@@ -1597,9 +1505,7 @@
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.getElementById(id).classList.add('active');
         event.currentTarget.classList.add('active');
-        if(id === 'analytics') setTimeout(renderAnalytics, 50);
-        else if(id === 'analysisPlus') setTimeout(renderAnalysisPlus, 50);
-        else renderAll();
+        if(id === 'analytics') setTimeout(renderAnalytics, 50); else renderAll();
     }
 
     function setDates() {
@@ -2169,246 +2075,6 @@ function exportWarehouseCSV() {
         }));
         downloadCSV(headers, rows, `warehouse_master_${new Date().toISOString().slice(0,10)}.csv`);
     }
-
-
-
-    // ---------- Analytics exports ----------
-    function exportAnalyticsXLSX() {
-        const data = (products || []).map(p => ({
-            month: currentMonth,
-            product: p.sku,
-            initial: Number(p.initQty ?? p.init ?? 0),
-            received: sum(p, 'RECEIVED'),
-            returns: sum(p, 'return') + sum(p, 'RETURN') + sum(p, 'recovered') + sum(p, 'RECOVERED'),
-            adjustments: sum(p, 'adjust') + sum(p, 'ADJUST'),
-            picking: sum(p, 'picking'),
-            internal: sum(p, 'internal'),
-            amsped: sum(p, 'amsped'),
-            b2b: sum(p, 'b2b')
-        }));
-
-        const days = Array.from({length: 31}, (_, i) => String(i + 1).padStart(2, '0'));
-        const daily = days.map(d => {
-            const ds = `${currentMonth}-${d}`;
-            const qty = (products || []).reduce((acc, p) =>
-                acc + (p.movements || []).filter(m => m.date === ds && m.type === 'picking').reduce((a,c)=>a+(Number(c.qty)||0),0), 0
-            );
-            return { month: currentMonth, date: ds, picking_total: qty };
-        });
-
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(data), 'PerProduct');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(daily), 'DailyPicking');
-        XLSX.writeFile(wb, `analytics_${currentMonth}.xlsx`);
-    }
-    function exportAnalyticsCSV() { exportAnalyticsXLSX(); }
-
-    // ---------- Analysis+ (Month/Year) ----------
-    let analysisPlusCache = { mode:'month', year:'', months:[], summaryRows:[], productRows:[] };
-
-    function getAvailableYearsFromSelect() {
-        const sel = document.getElementById('monthPicker');
-        const years = new Set();
-        if (!sel) return [];
-        Array.from(sel.options).forEach(o => {
-            const v = String(o.value || '');
-            const y = v.slice(0,4);
-            if (/^\d{4}$/.test(y)) years.add(y);
-        });
-        return Array.from(years).sort((a,b)=>b.localeCompare(a));
-    }
-
-    async function listMonthsForYear(year) {
-        // Prefer server list (all months), fallback to dropdown options
-        try {
-            const ids = await window.fb.listDocIds('months');
-            return ids.filter(id => String(id).startsWith(year+'-')).sort();
-        } catch(e) {
-            const sel = document.getElementById('monthPicker');
-            const ids = Array.from(sel?.options||[]).map(o=>o.value);
-            return ids.filter(id => String(id).startsWith(year+'-')).sort();
-        }
-    }
-
-    function aggInit() {
-        return {
-            totalsByType: {},          // movement types
-            shipSent: 0,
-            shipReceived: 0,
-            byProduct: {}              // {sku: {received, amsped, b2b, picking, internal, adjust, net}}
-        };
-    }
-
-    function addProdAgg(agg, sku) {
-        const k = normKey(sku);
-        if (!agg.byProduct[k]) agg.byProduct[k] = { sku, received:0, amsped:0, b2b:0, picking:0, internal:0, adjust:0, net:0 };
-        return agg.byProduct[k];
-    }
-
-    function applyMovementToAgg(agg, sku, type, qty) {
-        const q = Number(qty)||0;
-        const t = String(type||'').toLowerCase();
-        const row = addProdAgg(agg, sku);
-
-        // Track totals by raw type
-        const key = String(type||'');
-        agg.totalsByType[key] = (agg.totalsByType[key]||0) + q;
-
-        // Normalize buckets
-        if (t === 'received' || t === 'receive') { row.received += q; row.net += q; return; }
-        if (t === 'amsped') { row.amsped += q; row.net -= q; return; }
-        if (t === 'b2b') { row.b2b += q; row.net -= q; return; }
-        if (t === 'picking') { row.picking += q; row.net -= q; return; }
-        if (t === 'internal') { row.internal += q; row.net -= q; return; }
-
-        // Adjustments can be + or -
-        if (t === 'adjust' || t === 'adjustment' || t === 'adjustments') { row.adjust += q; row.net += q; return; }
-
-        // Returns / recovered usually increase stock
-        if (t === 'return' || t === 'returns' || t === 'recovered') { row.net += q; return; }
-    }
-
-    function aggregateMonthData(monthId, monthData) {
-        const agg = aggInit();
-        const prods = Array.isArray(monthData?.products) ? monthData.products : [];
-        prods.forEach(p => {
-            const sku = p.sku || p.product || '';
-            (p.movements || []).forEach(m => applyMovementToAgg(agg, sku, m.type, m.qty));
-        });
-
-        const monthLogs = Array.isArray(monthData?.logs) ? monthData.logs : [];
-        monthLogs.forEach(l => {
-            const st = String(l.status||'').toUpperCase();
-            const q = Number(l.qty)||0;
-            if (st === 'SENT') agg.shipSent += q;
-            if (st === 'RECEIVED') agg.shipReceived += q;
-        });
-
-        return agg;
-    }
-
-    async function aggregateYear(year) {
-        const months = await listMonthsForYear(year);
-        const yearAgg = aggInit();
-        for (const mId of months) {
-            const data = await window.fb.getDocData(['months', mId]);
-            if (!data) continue;
-            const agg = aggregateMonthData(mId, data);
-
-            // merge
-            Object.entries(agg.totalsByType).forEach(([k,v])=>{
-                yearAgg.totalsByType[k] = (yearAgg.totalsByType[k]||0) + v;
-            });
-            yearAgg.shipSent += agg.shipSent;
-            yearAgg.shipReceived += agg.shipReceived;
-            Object.values(agg.byProduct).forEach(r=>{
-                const dst = addProdAgg(yearAgg, r.sku);
-                dst.received += r.received;
-                dst.amsped += r.amsped;
-                dst.b2b += r.b2b;
-                dst.picking += r.picking;
-                dst.internal += r.internal;
-                dst.adjust += r.adjust;
-                dst.net += r.net;
-            });
-        }
-        return { months, agg: yearAgg };
-    }
-
-    function renderAnalysisPlusTablesOnly() {
-        const search = (document.getElementById('apSearch')?.value || '').trim().toLowerCase();
-        const sumBody = document.getElementById('apSummaryBody');
-        const prodBody = document.getElementById('apProductBody');
-        if (!sumBody || !prodBody) return;
-
-        // Summary
-        sumBody.innerHTML = '';
-        (analysisPlusCache.summaryRows || []).forEach(r=>{
-            sumBody.innerHTML += `<tr><td>${r.category}</td><td>${r.type}</td><td>${r.total}</td></tr>`;
-        });
-
-        // Products
-        const rows = (analysisPlusCache.productRows || [])
-          .filter(r => !search || String(r.product||'').toLowerCase().includes(search))
-          .sort((a,b)=> (a.net - b.net) || String(a.product).localeCompare(String(b.product)));
-
-        prodBody.innerHTML = '';
-        rows.forEach(r=>{
-            prodBody.innerHTML += `<tr>
-              <td><b>${r.product}</b></td>
-              <td>${r.net}</td>
-              <td>${r.received}</td>
-              <td>${r.amsped}</td>
-              <td>${r.b2b}</td>
-              <td>${r.picking}</td>
-              <td>${r.internal}</td>
-              <td>${r.adjustments}</td>
-            </tr>`;
-        });
-    }
-
-    async function renderAnalysisPlus() {
-        // PT only (write users). PL should not see this tab.
-        if (userRole === 'pl') { alert('PL: Analysis+ não disponível.'); return; }
-
-        // Populate year list once
-        const yearSel = document.getElementById('apYear');
-        if (yearSel && yearSel.options.length === 0) {
-            const years = getAvailableYearsFromSelect();
-            yearSel.innerHTML = years.map(y=>`<option value="${y}">${y}</option>`).join('');
-            yearSel.value = String(currentMonth).slice(0,4);
-        }
-
-        const mode = document.getElementById('apMode')?.value || 'month';
-        const year = document.getElementById('apYear')?.value || String(currentMonth).slice(0,4);
-
-        let aggResult = null;
-        if (mode === 'month') {
-            aggResult = { months:[currentMonth], agg: aggregateMonthData(currentMonth, { products, logs }) };
-        } else {
-            aggResult = await aggregateYear(year);
-        }
-
-        const agg = aggResult.agg;
-        analysisPlusCache.mode = mode;
-        analysisPlusCache.year = year;
-        analysisPlusCache.months = aggResult.months;
-
-        // Build summary rows
-        const summaryRows = [];
-        Object.entries(agg.totalsByType).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))).forEach(([k,v])=>{
-            summaryRows.push({ category:'Movements', type:k, total: Number(v)||0 });
-        });
-        summaryRows.push({ category:'Shipments', type:'SENT', total: agg.shipSent });
-        summaryRows.push({ category:'Shipments', type:'RECEIVED', total: agg.shipReceived });
-
-        // Build per-product rows
-        const productRows = Object.values(agg.byProduct).map(r=>({
-            product: r.sku,
-            net: Math.round((Number(r.net)||0)*1000)/1000,
-            received: Math.round((Number(r.received)||0)*1000)/1000,
-            amsped: Math.round((Number(r.amsped)||0)*1000)/1000,
-            b2b: Math.round((Number(r.b2b)||0)*1000)/1000,
-            picking: Math.round((Number(r.picking)||0)*1000)/1000,
-            internal: Math.round((Number(r.internal)||0)*1000)/1000,
-            adjustments: Math.round((Number(r.adjust)||0)*1000)/1000
-        }));
-
-        analysisPlusCache.summaryRows = summaryRows;
-        analysisPlusCache.productRows = productRows;
-
-        renderAnalysisPlusTablesOnly();
-    }
-
-    function exportAnalysisPlusXLSX() {
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(analysisPlusCache.summaryRows || []), 'Summary');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(analysisPlusCache.productRows || []), 'ByProduct');
-        const tag = analysisPlusCache.mode === 'year' ? analysisPlusCache.year : currentMonth;
-        XLSX.writeFile(wb, `analysis_plus_${tag}.xlsx`);
-    }
-    function exportAnalysisPlusCSV() { exportAnalysisPlusXLSX(); }
-
 
 </script>
 </body>
