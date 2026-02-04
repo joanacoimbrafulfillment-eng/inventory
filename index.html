@@ -136,6 +136,7 @@
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
                 <div id="generalUpdatedAt" style="font-size:12px; color:#666;"></div>
                 <button class="btn btn-secondary" style="padding:6px 10px; font-size:12px;" onclick="reconnectGeneral()">🔄 Reconnect</button>
+                <button id="btnBackfillGeneral" class="btn btn-success" style="padding:6px 10px; font-size:12px; margin-left:8px; display:none;" onclick="backfillGeneralViews()">📣 Publicar meses p/ PL</button>
             </div>
             <div id="dash-general" class="dashboard-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px;"></div>
 
@@ -352,7 +353,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
   import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-  import { initializeFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+  import { initializeFirestore, doc, getDoc, setDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBvJIwx6KDSrwdnJ1o8vqvttsv9dzycY6g",
@@ -379,6 +380,11 @@
     async setDocData(pathParts, data) {
       const ref = doc(db, ...pathParts);
       await setDoc(ref, data, { merge: true });
+    },
+    async listDocIds(collectionName) {
+      const colRef = collection(db, collectionName);
+      const snap = await getDocs(colRef);
+      return snap.docs.map(d => d.id);
     },
     subscribeDocData(pathParts, cb) {
       const ref = doc(db, ...pathParts);
@@ -530,6 +536,10 @@
         currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         const mp = document.getElementById('monthPicker');
         if (mp) mp.value = currentMonth;
+
+        // PT-only tools
+        const bf = document.getElementById('btnBackfillGeneral');
+        if (bf) bf.style.display = (userRole === 'pt') ? '' : 'none';
 
         if (userRole === 'pl') {
             // PL accounts: General-only, real-time from Firestore "general/{YYYY-MM}"
@@ -720,7 +730,7 @@
         if (userRole === 'pl') return; // PL doesn't need this; it uses general/{month} snapshot
 
         // Look back up to 6 months to find outstanding SENT shipments
-        for (let i = 1; i <= 6; i++) {
+        for (let i = 1; i <= 24; i++) {
             const mKey = monthMinus(currentMonth, i);
             try {
                 const d = await window.fb.getDocData(['months', mKey]);
@@ -728,8 +738,8 @@
                 d.logs.forEach(l => {
                     if (!l) return;
                     if (l.status !== 'SENT') return;
-                    // If already received in some month, skip from open list
-                    if (l.receivedInMonth) return;
+                    // If received in or before the month we're viewing, it's no longer in transit for this month.
+                    if (l.receivedInMonth && String(l.receivedInMonth).localeCompare(String(currentMonth)) <= 0) return;
                     openSentLogs.push({
                         fromMonth: mKey,
                         id: l.id,
@@ -838,7 +848,7 @@
         return (products || []).map(p => {
             const real = calculateStock(p, 'real', logs);
             const amsped = calculateStock(p, 'amsped', logs);
-            const transitCurrent = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT')
+            const transitCurrent = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT' && (!l.receivedInMonth || String(l.receivedInMonth).localeCompare(String(currentMonth)) > 0))
                                 .reduce((a,c)=>a + (Number(c.qty)||0), 0);
             const transitPrev = (openSentLogs || []).filter(l => normKey(l.sku) === normKey(p.sku))
                                 .reduce((a,c)=>a + (Number(c.qty)||0), 0);
@@ -867,6 +877,91 @@
         } catch (e) {
             console.error('Firestore general view save failed', e);
         }
+
+    // PT helper: publish General snapshots for ALL saved months so .pl can view historical months too
+    async function backfillGeneralViews() {
+        try {
+            if (!window.fb || userRole === 'pl') return;
+            const btn = document.getElementById('btnBackfillGeneral');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ A publicar...'; }
+
+            const monthIds = await window.fb.listDocIds('months');
+            // sort YYYY-MM
+            monthIds.sort((a,b) => String(a).localeCompare(String(b)));
+
+                        // Prefetch all months (products + logs) once
+            const monthDataMap = {};
+            for (const mid of monthIds) {
+                try {
+                    const d = await window.fb.getDocData(['months', mid]);
+                    if (d) monthDataMap[mid] = d;
+                } catch(e) {
+                    console.warn('Backfill prefetch failed for', mid, e);
+                }
+            }
+
+            // Helper: is a SENT log still "in transit" as of the end of targetMonth?
+            function sentIsOpenAsOf(log, targetMonth) {
+                if (!log || log.status !== 'SENT') return false;
+                if (!log.receivedInMonth) return true; // not received yet
+                // If received in a later month, it was still in transit for targetMonth
+                return String(log.receivedInMonth).localeCompare(String(targetMonth)) > 0;
+            }
+
+            for (const mid of monthIds) {
+                const data = monthDataMap[mid];
+                if (!data) continue;
+
+                const monthProducts = reconcileWithMaster(data.products || []);
+                const monthLogs = data.logs || [];
+
+                // Compute transit for this month INCLUDING open SENT from previous months
+                // Transit for mid = sum of all SENT shipments with fromMonth <= mid that are still open as-of mid
+                const transitBySku = {};
+                for (const fromMonth of monthIds) {
+                    if (String(fromMonth).localeCompare(String(mid)) > 0) break; // only months up to mid
+                    const d2 = monthDataMap[fromMonth];
+                    if (!d2 || !Array.isArray(d2.logs)) continue;
+                    d2.logs.forEach(l => {
+                        if (!sentIsOpenAsOf(l, mid)) return;
+                        const k = normKey(l.sku);
+                        transitBySku[k] = (transitBySku[k] || 0) + (Number(l.qty) || 0);
+                    });
+                }
+
+                const items = (monthProducts || []).map(p => {
+                    const real = (p.initial || 0)
+                        + (p.movements||[]).filter(m => ['adjust','returns','refunds','recovered','RECEIVED'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0)
+                        - (p.movements||[]).filter(m => ['customerCare','awards','officeNeeds'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0)
+                        - (p.movements||[]).filter(m => ['picking','b2b'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0);
+
+                    const amsped = (p.initial || 0)
+                        + (p.movements||[]).filter(m => ['adjust','returns','refunds','recovered','RECEIVED'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0)
+                        - (p.movements||[]).filter(m => ['customerCare','awards','officeNeeds'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0)
+                        - (p.movements||[]).filter(m => ['amsped','b2b'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0);
+
+                    const transit = transitBySku[normKey(p.sku)] || 0;
+
+                    return { sku: p.sku, real: Number(real)||0, amsped: Number(amsped)||0, transit: Number(transit)||0 };
+                }).sort((a,b) => (a.real - b.real) || String(a.sku).localeCompare(String(b.sku), undefined, {numeric:true}));
+
+                await window.fb.setDocData(['general', mid], {
+                    items,
+                    updatedAt: new Date().toISOString(),
+                    backfilledAt: new Date().toISOString(),
+                    backfilledBy: currentActorEmail()
+                });
+            }
+
+            alert('Publicação concluída: .pl já consegue ver todos os meses gravados.');
+        } catch (e) {
+            console.error(e);
+            alert('Erro ao publicar meses para .pl: ' + (e?.message || e));
+        } finally {
+            const btn = document.getElementById('btnBackfillGeneral');
+            if (btn) { btn.disabled = false; btn.textContent = '📣 Publicar meses p/ PL'; }
+        }
+    }
     }
 
     function startGeneralRealtime() {
