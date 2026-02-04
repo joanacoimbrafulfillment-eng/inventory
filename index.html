@@ -654,12 +654,13 @@
         if (warn) warn.style.display = (location.protocol === 'file:') ? '' : 'none';
     };
 
-    function changeMonth() {
+    async function changeMonth() {
         currentMonth = document.getElementById('monthPicker').value;
         if (userRole === 'pl') {
             startGeneralRealtime();
         } else {
-            loadMonthData();
+            await loadMonthData();
+            // publish General AFTER month data is loaded, so PL sees the right values
             queueSaveGeneralView(true);
         }
     }
@@ -685,6 +686,7 @@
             allData[currentMonth] = { products, logs };
             await loadOpenSentLogsFromPreviousMonths();
             renderAll();
+            queueSaveGeneralView(true);
         } else {
             document.getElementById('mainInterface').style.display = 'none';
             document.getElementById('initView').style.display = 'flex';
