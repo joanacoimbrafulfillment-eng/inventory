@@ -610,9 +610,12 @@
 
     // ---- Master Product List (Warehouse upload) ----
     function masterSkuLines() {
-        return (warehouseItems || [])
+        const lines = (warehouseItems || [])
             .map(r => (r?.produto ?? '').toString().trim())
             .filter(Boolean);
+        const normal = lines.filter(s => !isWarrantySku(s));
+        const warranty = lines.filter(s => isWarrantySku(s));
+        return normal.concat(warranty);
     }
 
     function parseSkuLine(line) {
@@ -1048,9 +1051,23 @@
         setDates(); updateDatalist(); renderGeneral(); renderOrderInventory(); renderShipments(); renderManagement(); renderMiniDash(); renderRecentLogs(); renderWarehouse(); renderMovements();
     }
 
-    function updateDatalist() {
+    
+    function isWarrantySku(sku) {
+        return (sku || '').trim().toUpperCase() === 'WARRANTY PT' || (sku || '').trim().toUpperCase() === 'WARRANTY ES';
+    }
+
+    function sortSkusWithWarrantyLast(list) {
+        const arr = (list || []).slice();
+        const normal = arr.filter(p => !isWarrantySku(p.sku));
+        const warranty = arr.filter(p => isWarrantySku(p.sku));
+        normal.sort((a,b) => (a.sku||'').localeCompare(b.sku||''));
+        warranty.sort((a,b) => (a.sku||'').localeCompare(b.sku||''));
+        return normal.concat(warranty);
+    }
+
+function updateDatalist() {
         const dl = document.getElementById('productList'); dl.innerHTML = '';
-        products.forEach(p => dl.innerHTML += `<option value="${p.sku}">${p.sku}</option>`);
+        sortSkusWithWarrantyLast(products).forEach(p => dl.innerHTML += `<option value="${p.sku}">${p.sku}</option>`);
     }
 
     function qtyClass(v) {
@@ -1098,6 +1115,11 @@
             return;
         }
 
+
+        // Keep WARRANTY PT/ES always at the end (they are not real products and often go negative)
+        const w = rows.filter(r => isWarrantySku(r.sku));
+        const nw = rows.filter(r => !isWarrantySku(r.sku));
+        rows = nw.concat(w);
 
         rows.forEach(({sku, real, amsped, transit}) => {
             bodyG.innerHTML += `<tr>
@@ -1207,17 +1229,28 @@
         // Sort by date desc then product
         combined.sort((a,b) => (b.date||'').localeCompare(a.date||'') || (a.sku||'').localeCompare(b.sku||''));
 
+        const today = new Date().toISOString().split('T')[0];
+
         combined.forEach((l) => {
             const isPrev = l.__source === 'prev';
             const statusLabel = isPrev ? 'SENT (prev)' : l.status;
             const badgeClass = (l.status || '').toLowerCase();
 
+            const key = (isPrev ? `p_${l.__fromMonth}_${l.id}` : `c_${l.__idx}`);
+            let arrivalCell = `${l.arrivalDate || '-'}`;
             let acts = '';
+
             if (l.status === 'SENT') {
+                // Inline receive controls (no prompts)
+                arrivalCell = `<div style="display:flex; gap:6px; align-items:center;">
+                        <input type="number" min="0" id="recQty_${key}" class="input-single" style="width:80px" placeholder="Qty" value="${l.qty}">
+                        <input type="date" id="recDate_${key}" class="input-single" style="width:140px" value="${today}">
+                    </div>`;
+
                 if (isPrev) {
-                    acts += `<button class="btn btn-success" onclick="receivePrevSent('${l.__fromMonth}', ${l.id})">Receive</button> `;
+                    acts += `<button class="btn btn-success" onclick="receivePrevSentInline('${l.__fromMonth}', ${l.id}, '${key}')">Receive</button> `;
                 } else {
-                    acts += `<button class="btn btn-success" onclick="receiveLog(${l.__idx})">Receive</button> `;
+                    acts += `<button class="btn btn-success" onclick="receiveLogInline(${l.__idx}, '${key}')">Receive</button> `;
                 }
             }
 
@@ -1233,14 +1266,35 @@
                 <td>${l.sku}</td>
                 <td><span class="badge bg-${badgeClass}">${statusLabel}</span></td>
                 <td>${l.qty}</td>
-                <td>${l.arrivalDate || '-'}</td>
+                <td>${arrivalCell}</td>
                 <td>${(l.note||'-')}</td>
                 <td>${acts}</td>
             </tr>`;
         });
     }
 
-    async function receivePrevSent(fromMonth, sourceId) {
+    // Inline handlers for Receive (avoid browser prompts)
+    async function receivePrevSentInline(fromMonth, sourceId, key) {
+        const qtyEl = document.getElementById(`recQty_${key}`);
+        const dateEl = document.getElementById(`recDate_${key}`);
+        const qty = parseInt(qtyEl?.value || '0', 10);
+        const date = (dateEl?.value || '').trim();
+        if (isNaN(qty) || qty <= 0) return alert('Qtd recebida inválida.');
+        if (!date) return alert('Data inválida.');
+        await receivePrevSent(fromMonth, sourceId, qty, date);
+    }
+
+    async function receiveLogInline(idx, key) {
+        const qtyEl = document.getElementById(`recQty_${key}`);
+        const dateEl = document.getElementById(`recDate_${key}`);
+        const qty = parseInt(qtyEl?.value || '0', 10);
+        const date = (dateEl?.value || '').trim();
+        if (isNaN(qty) || qty <= 0) return alert('Qtd recebida inválida.');
+        if (!date) return alert('Data inválida.');
+        await receiveLog(idx, qty, date);
+    }
+
+    async function receivePrevSent(fromMonth, sourceId, qty, date) {
         // Receive a SENT that was created in a previous month:
         // - Keep the original log as SENT (historical),
         // - Create RECEIVED in the CURRENT month (so inventory increases in the month received),
@@ -1329,7 +1383,7 @@
         if(textEl) textEl.value = "";
     }
 
-    function receiveLog(idx) {
+    async function receiveLog(idx, qtyRec, date) {
         const src = logs[idx];
         if (!src) return;
         if (src.status !== 'SENT') return;
@@ -1415,7 +1469,7 @@
 
     function renderManagement() {
         const bodyM = document.getElementById('bodyManagement'); bodyM.innerHTML = '';
-        products.forEach((p, i) => {
+        sortSkusWithWarrantyLast(products).forEach((p, i) => {
             bodyM.innerHTML += `<tr><td>${p.sku}</td><td><input type="number" class="input-single" style="width:40px" value="${p.initial}" onchange="products[${i}].initial=parseInt(this.value);save();renderAll()"></td><td>${sum(p,'RECEIVED')}</td><td>${sum(p,'adjust')}</td><td>${sum(p,'picking')}</td><td>${sum(p,'amsped')}</td><td>${sum(p,'b2b')}</td><td><button onclick="showHistory(${i})">📜</button></td></tr>`;
         });
     }
