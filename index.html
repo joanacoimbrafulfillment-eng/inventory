@@ -515,6 +515,8 @@
     let userRole = 'pt';
     let generalViewItems = [];
     let generalUnsub = null;
+    // Cross-month open SENT shipments (so receiving next month adds stock in the month received)
+    let openSentLogs = []; // [{fromMonth, id, date, sku, qty, by, uid}]
     let saveTimer = null;
     let generalSaveTimer = null;
     let lastSavedAt = 0;
@@ -544,6 +546,7 @@
 
         // Load selected month data
         await loadMonthData();
+        await loadOpenSentLogsFromPreviousMonths();
 
         // Publish initial General view for this month (so .pl can see it)
         queueSaveGeneralView(true);
@@ -680,6 +683,7 @@
             document.getElementById('initView').style.display = 'none';
             document.getElementById('mainInterface').style.display = 'block';
             allData[currentMonth] = { products, logs };
+            await loadOpenSentLogsFromPreviousMonths();
             renderAll();
         } else {
             document.getElementById('mainInterface').style.display = 'none';
@@ -705,6 +709,64 @@
             } catch(e){}
         }
         return null;
+    }
+
+    // ---- Cross-month: load open SENT logs from previous months (still not received) ----
+    async function loadOpenSentLogsFromPreviousMonths() {
+        openSentLogs = [];
+        if (!window.fb || !currentMonth) return;
+        if (userRole === 'pl') return; // PL doesn't need this; it uses general/{month} snapshot
+
+        // Look back up to 6 months to find outstanding SENT shipments
+        for (let i = 1; i <= 6; i++) {
+            const mKey = monthMinus(currentMonth, i);
+            try {
+                const d = await window.fb.getDocData(['months', mKey]);
+                if (!d || !Array.isArray(d.logs)) continue;
+                d.logs.forEach(l => {
+                    if (!l) return;
+                    if (l.status !== 'SENT') return;
+                    // If already received in some month, skip from open list
+                    if (l.receivedInMonth) return;
+                    openSentLogs.push({
+                        fromMonth: mKey,
+                        id: l.id,
+                        date: l.date,
+                        sku: l.sku,
+                        qty: Number(l.qty) || 0,
+                        by: l.by || '',
+                        uid: l.uid || ''
+                    });
+                });
+            } catch(e) {
+                console.warn('Failed to load previous month logs', mKey, e);
+            }
+        }
+
+        // Sort: newest first
+        openSentLogs.sort((a,b) => (b.date||'').localeCompare(a.date||'') || (a.sku||'').localeCompare(b.sku||''));
+    }
+
+    async function markSourceSentAsReceived(fromMonth, sourceId, receivedInMonth, arrivalDate, receivedQty) {
+        if (!window.fb) return;
+        try {
+            const d = await window.fb.getDocData(['months', fromMonth]);
+            if (!d || !Array.isArray(d.logs)) return;
+            const logsArr = d.logs;
+            const idx = logsArr.findIndex(x => x && x.id === sourceId);
+            if (idx < 0) return;
+
+            // Keep status as SENT for historical month snapshot, but mark it as already received elsewhere
+            logsArr[idx].receivedInMonth = receivedInMonth;
+            logsArr[idx].receivedAt = arrivalDate;
+            logsArr[idx].receivedQty = receivedQty;
+            logsArr[idx].receivedBy = currentActorEmail();
+            logsArr[idx].receivedUid = currentActorUid();
+
+            await window.fb.setDocData(['months', fromMonth], { logs: logsArr, updatedAt: new Date().toISOString() });
+        } catch(e) {
+            console.error('Failed to mark source SENT as received', e);
+        }
     }
 
     async function initializeMonth(carryOver) {
@@ -773,8 +835,11 @@
         return (products || []).map(p => {
             const real = calculateStock(p, 'real', logs);
             const amsped = calculateStock(p, 'amsped', logs);
-            const transit = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT')
+            const transitCurrent = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT')
                                 .reduce((a,c)=>a + (Number(c.qty)||0), 0);
+            const transitPrev = (openSentLogs || []).filter(l => normKey(l.sku) === normKey(p.sku))
+                                .reduce((a,c)=>a + (Number(c.qty)||0), 0);
+            const transit = transitCurrent + transitPrev;
             return { sku: p.sku, real: Number(real)||0, amsped: Number(amsped)||0, transit: Number(transit)||0 };
         }).sort((a,b) => (a.real - b.real) || a.sku.localeCompare(b.sku, undefined, {numeric:true}));
     }
@@ -978,13 +1043,112 @@
     function clearToConfirm() { if(confirm("Clear ALL 'TO CONFIRM' values?")) { products.forEach(p => p.toConfirm = 0); save(); renderAll(); } }
 
     function renderShipments() {
-        const body = document.getElementById('bodyShipments'); body.innerHTML = '';
-        logs.forEach((l, i) => {
-            let acts = `<button class="btn btn-edit" onclick="editLog(${i})">Edit</button> <button class="btn btn-danger" onclick="deleteLog(${i})">X</button>`;
-            if(l.status === 'SENT') acts = `<button class="btn btn-success" onclick="receiveLog(${i})">Receive</button> ` + acts;
-            body.innerHTML += `<tr><td>${l.date}</td><td>${l.sku}</td><td><span class="badge bg-${l.status.toLowerCase()}">${l.status}</span></td><td>${l.qty}</td><td>${l.arrivalDate || '-'}</td><td>${acts}</td></tr>`;
+        const body = document.getElementById('bodyShipments');
+        if (!body) return;
+        body.innerHTML = '';
+
+        // Combine current month logs + open SENT from previous months
+        const combined = [];
+
+        (logs || []).forEach((l, i) => {
+            combined.push({ ...l, __source: 'current', __idx: i, __fromMonth: currentMonth });
+        });
+
+        (openSentLogs || []).forEach((l) => {
+            combined.push({
+                date: l.date,
+                sku: l.sku,
+                qty: l.qty,
+                status: 'SENT',
+                id: l.id,
+                by: l.by || '',
+                uid: l.uid || '',
+                __source: 'prev',
+                __idx: null,
+                __fromMonth: l.fromMonth
+            });
+        });
+
+        // Sort by date desc then product
+        combined.sort((a,b) => (b.date||'').localeCompare(a.date||'') || (a.sku||'').localeCompare(b.sku||''));
+
+        combined.forEach((l) => {
+            const isPrev = l.__source === 'prev';
+            const statusLabel = isPrev ? 'SENT (prev)' : l.status;
+            const badgeClass = (l.status || '').toLowerCase();
+
+            let acts = '';
+            if (l.status === 'SENT') {
+                if (isPrev) {
+                    acts += `<button class="btn btn-success" onclick="receivePrevSent('${l.__fromMonth}', ${l.id})">Receive</button> `;
+                } else {
+                    acts += `<button class="btn btn-success" onclick="receiveLog(${l.__idx})">Receive</button> `;
+                }
+            }
+
+            if (!isPrev) {
+                acts += `<button class="btn btn-edit" onclick="editLog(${l.__idx})">Edit</button> ` +
+                        `<button class="btn btn-danger" onclick="deleteLog(${l.__idx})">X</button>`;
+            } else {
+                acts += `<span style="font-size:12px; color:#666;">(sent em ${l.__fromMonth})</span>`;
+            }
+
+            body.innerHTML += `<tr>
+                <td>${l.date}</td>
+                <td>${l.sku}</td>
+                <td><span class="badge bg-${badgeClass}">${statusLabel}</span></td>
+                <td>${l.qty}</td>
+                <td>${l.arrivalDate || '-'}</td>
+                <td>${acts}</td>
+            </tr>`;
         });
     }
+
+    async function receivePrevSent(fromMonth, sourceId) {
+        // Receive a SENT that was created in a previous month:
+        // - Keep the original log as SENT (historical),
+        // - Create RECEIVED in the CURRENT month (so inventory increases in the month received),
+        // - Mark the original as receivedInMonth to avoid showing it again as "open".
+        const src = (openSentLogs || []).find(x => x.fromMonth === fromMonth && x.id === sourceId);
+        if (!src) return alert('Shipment not found (maybe already received).');
+
+        const qty = parseInt(prompt("Confirmed Qty Received:", src.qty));
+        const date = prompt("Arrival Date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
+        if (isNaN(qty) || !date) return;
+
+        // Create a RECEIVED movement in the CURRENT month
+        const p = findProd(src.sku);
+        if (p) {
+            p.movements.push({ type: 'RECEIVED', qty, date, logId: sourceId, by: currentActorEmail(), uid: currentActorUid() });
+        } else {
+            alert('Produto não encontrado no mês atual. Confirma se existe no Warehouse master.');
+            return;
+        }
+
+        // Add a RECEIVED log in current month for tracking/exports
+        logs.push({
+            date,
+            sku: src.sku,
+            qty: qty,
+            status: 'RECEIVED',
+            id: Date.now(),
+            arrivalDate: date,
+            receivedQty: qty,
+            sourceMonth: fromMonth,
+            sourceId: sourceId,
+            by: currentActorEmail(),
+            uid: currentActorUid()
+        });
+
+        // Mark previous month SENT as received elsewhere (but keep status SENT)
+        await markSourceSentAsReceived(fromMonth, sourceId, currentMonth, date, qty);
+
+        // Refresh open list + save
+        await loadOpenSentLogsFromPreviousMonths();
+        save();
+        renderAll();
+    }
+
 
     function addOrderLog(status) {
         const prefix = status === 'ORDER' ? 'ord' : 'ship';
