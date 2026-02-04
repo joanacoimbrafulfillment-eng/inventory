@@ -352,7 +352,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
   import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+  import { initializeFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBvJIwx6KDSrwdnJ1o8vqvttsv9dzycY6g",
@@ -365,7 +365,7 @@
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db = getFirestore(app);
+  const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
 
   // Expose minimal helpers to the legacy (non-module) code
   window.fb = {
@@ -383,7 +383,7 @@
     subscribeDocData(pathParts, cb) {
       const ref = doc(db, ...pathParts);
       window.fb.lastError = null;
-      return onSnapshot(ref, (snap) => {
+      return onSnapshot(ref, { includeMetadataChanges: true }, (snap) => {
         window.fb.lastError = null;
         cb(snap.exists() ? snap.data() : null);
       }, (err) => {
@@ -819,7 +819,8 @@
         // Firestore save (debounced)
         allData[currentMonth] = { products, logs };
         queueSaveMonth();
-        queueSaveGeneralView(false);
+        // publish General view fast so PL sees near-instant updates
+        queueSaveGeneralView(true);
     }
 
     function queueSaveMonth() {
@@ -848,7 +849,7 @@
         if (!window.fb || !currentMonth) return;
         if (userRole === 'pl') return; // PL can't write
         if (generalSaveTimer) clearTimeout(generalSaveTimer);
-        const delay = immediate ? 10 : 700;
+        const delay = immediate ? 0 : 150;
         generalSaveTimer = setTimeout(flushSaveGeneralView, delay);
     }
 
