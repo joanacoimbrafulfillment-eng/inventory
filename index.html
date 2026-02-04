@@ -230,6 +230,7 @@
                             <input type="date" id="shipDate" class="input-single today-date">
                             <input type="text" list="productList" id="shipSku" class="input-single" style="width:180px" placeholder="SKU">
                             <input type="number" id="shipQty" class="input-single" style="width:70px" placeholder="Qty">
+                            <input type="text" id="shipNote" class="input-single" style="width:220px" placeholder="Obs (opcional)">
                             <button class="btn btn-warning" onclick="addOrderLog('SENT')">Register SENT</button>
                         </div>
                         <textarea id="inputShipBulk" class="bulk-area" style="height:90px" placeholder="Bulk: Produto QTY"></textarea>
@@ -239,7 +240,7 @@
                     <div class="section-box">
                         <h3>📋 Workflow History</h3>
                         <table>
-                            <thead><tr><th>Date</th><th>Product</th><th>Status</th><th>Qty</th><th>Arrival</th><th>Actions</th></tr></thead>
+                            <thead><tr><th>Date</th><th>Product</th><th>Status</th><th>Qty</th><th>Arrival</th><th>Obs</th><th>Actions</th></tr></thead>
                             <tbody id="bodyShipments"></tbody>
                         </table>
                     </div>
@@ -746,6 +747,7 @@
                         date: l.date,
                         sku: l.sku,
                         qty: Number(l.qty) || 0,
+                        note: l.note || '',
                         by: l.by || '',
                         uid: l.uid || ''
                     });
@@ -778,6 +780,40 @@
             await window.fb.setDocData(['months', fromMonth], { logs: logsArr, updatedAt: new Date().toISOString() });
         } catch(e) {
             console.error('Failed to mark source SENT as received', e);
+        }
+    }
+
+
+    // If a previous-month SENT is only partially received, keep it open by reducing its qty.
+    // This preserves the ability to receive the remaining quantity later.
+    async function updateSourceSentRemaining(fromMonth, sourceId, remainingQty, receivedInMonth, arrivalDate, receivedQty) {
+        if (!window.fb) return;
+        try {
+            const d = await window.fb.getDocData(['months', fromMonth]);
+            if (!d || !Array.isArray(d.logs)) return;
+            const logsArr = d.logs;
+            const idx = logsArr.findIndex(x => x && x.id === sourceId);
+            if (idx < 0) return;
+
+            const src = logsArr[idx];
+            src.qty = remainingQty;
+
+            src.partialReceipts = Array.isArray(src.partialReceipts) ? src.partialReceipts : [];
+            src.partialReceipts.push({
+                receivedInMonth,
+                receivedAt: arrivalDate,
+                receivedQty,
+                by: currentActorEmail(),
+                uid: currentActorUid()
+            });
+            src.lastPartialAt = arrivalDate;
+
+            // Make sure it stays open (do NOT set receivedInMonth)
+            delete src.receivedInMonth;
+
+            await window.fb.setDocData(['months', fromMonth], { logs: logsArr, updatedAt: new Date().toISOString() });
+        } catch(e) {
+            console.error('Failed to update source SENT remaining qty', e);
         }
     }
 
@@ -1159,6 +1195,7 @@
                 qty: l.qty,
                 status: 'SENT',
                 id: l.id,
+                note: l.note || '',
                 by: l.by || '',
                 uid: l.uid || '',
                 __source: 'prev',
@@ -1197,6 +1234,7 @@
                 <td><span class="badge bg-${badgeClass}">${statusLabel}</span></td>
                 <td>${l.qty}</td>
                 <td>${l.arrivalDate || '-'}</td>
+                <td>${(l.note||'-')}</td>
                 <td>${acts}</td>
             </tr>`;
         });
@@ -1234,12 +1272,20 @@
             receivedQty: qty,
             sourceMonth: fromMonth,
             sourceId: sourceId,
+            note: src.note || '',
             by: currentActorEmail(),
             uid: currentActorUid()
         });
 
-        // Mark previous month SENT as received elsewhere (but keep status SENT)
-        await markSourceSentAsReceived(fromMonth, sourceId, currentMonth, date, qty);
+        // Update previous month SENT:
+        // - If fully received, mark it as receivedInMonth (so it closes)
+        // - If partially received, reduce its qty and keep it open (remaining stays SENT)
+        if (qty < parseInt(src.qty)) {
+            const remaining = parseInt(src.qty) - qty;
+            await updateSourceSentRemaining(fromMonth, sourceId, remaining, currentMonth, date, qty);
+        } else {
+            await markSourceSentAsReceived(fromMonth, sourceId, currentMonth, date, qty);
+        }
 
         // Refresh open list + save
         await loadOpenSentLogsFromPreviousMonths();
@@ -1253,16 +1299,20 @@
         const date = document.getElementById(prefix + 'Date').value;
         const sku = document.getElementById(prefix + 'Sku').value.trim();
         const qty = parseInt(document.getElementById(prefix + 'Qty').value);
+        const note = (status === 'SENT' && document.getElementById('shipNote')) ? (document.getElementById('shipNote').value || '').trim() : '';
         if(!date || !sku || isNaN(qty)) return alert("Check fields");
-        logs.push({ date, sku, qty, status, id: Date.now(), by: currentActorEmail(), uid: currentActorUid() });
+        logs.push({ date, sku, qty, status, note, id: Date.now(), by: currentActorEmail(), uid: currentActorUid() });
         save(); renderAll();
-        document.getElementById(prefix + 'Sku').value = ''; document.getElementById(prefix + 'Qty').value = '';
+        document.getElementById(prefix + 'Sku').value = ''; 
+        document.getElementById(prefix + 'Qty').value = '';
+        if (status === 'SENT' && document.getElementById('shipNote')) document.getElementById('shipNote').value = '';
     }
 
     function processBulkOrderLog(status) {
         const prefix = status === 'ORDER' ? 'ord' : 'ship';
         const dateEl = document.getElementById(prefix + 'Date');
         const date = dateEl ? dateEl.value : '';
+        const note = (status === 'SENT' && document.getElementById('shipNote')) ? (document.getElementById('shipNote').value || '').trim() : '';
         const textEl = document.getElementById(status === 'ORDER' ? 'inputOrdBulk' : 'inputShipBulk');
         const text = (textEl && textEl.value ? textEl.value : '').trim();
         if(!date) return alert("Select a date first");
@@ -1273,21 +1323,68 @@
             const parsed = parseBulkLine(line);
             if(!parsed) return;
             const { sku, qty } = parsed;
-            logs.push({ date, sku, qty: Math.abs(qty), status, id: base + i, by: currentActorEmail(), uid: currentActorUid() });
+            logs.push({ date, sku, qty: Math.abs(qty), status, note, id: base + i, by: currentActorEmail(), uid: currentActorUid() });
         });
         save(); renderAll();
         if(textEl) textEl.value = "";
     }
 
     function receiveLog(idx) {
-        const qty = parseInt(prompt("Confirmed Qty Received:", logs[idx].qty));
+        const src = logs[idx];
+        if (!src) return;
+        if (src.status !== 'SENT') return;
+        const qtyRec = parseInt(prompt("Confirmed Qty Received:", src.qty));
         const date = prompt("Arrival Date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
-        if(!isNaN(qty) && date) {
-            logs[idx].status = 'RECEIVED'; logs[idx].arrivalDate = date; logs[idx].receivedQty = qty;
-            const p = findProd(logs[idx].sku);
-            if(p) p.movements.push({ type: 'RECEIVED', qty, date, logId: logs[idx].id, by: currentActorEmail(), uid: currentActorUid() });
-            save(); renderAll();
+        if (isNaN(qtyRec) || !date) return;
+
+        const sentQty = parseInt(src.qty);
+        if (isNaN(sentQty) || sentQty <= 0) return;
+
+        if (qtyRec > sentQty) return alert("Qty received cannot be higher than Qty SENT.");
+
+        // Add RECEIVED movement (inventory increases in this month)
+        const p = findProd(src.sku);
+        if (p) {
+            p.movements.push({ type: 'RECEIVED', qty: qtyRec, date, logId: src.id, by: currentActorEmail(), uid: currentActorUid() });
         }
+
+        // Create a RECEIVED log entry (keeps trace + exports)
+        logs.push({
+            date,
+            sku: src.sku,
+            qty: qtyRec,
+            status: 'RECEIVED',
+            id: Date.now(),
+            arrivalDate: date,
+            receivedQty: qtyRec,
+            sourceMonth: currentMonth,
+            sourceId: src.id,
+            note: src.note || '',
+            by: currentActorEmail(),
+            uid: currentActorUid()
+        });
+
+        const remaining = sentQty - qtyRec;
+
+        if (remaining > 0) {
+            // Keep the original as SENT with the remaining qty (so you can receive later)
+            src.qty = remaining;
+            // keep src.status = 'SENT'
+            // register partials (optional)
+            src.partialReceipts = Array.isArray(src.partialReceipts) ? src.partialReceipts : [];
+            src.partialReceipts.push({ month: currentMonth, date, qty: qtyRec, by: currentActorEmail(), uid: currentActorUid() });
+            src.lastPartialAt = date;
+        } else {
+            // Fully received: mark original as received (historical)
+            src.status = 'RECEIVED';
+            src.arrivalDate = date;
+            src.receivedQty = qtyRec;
+            src.receivedBy = currentActorEmail();
+            src.receivedUid = currentActorUid();
+        }
+
+        save();
+        renderAll();
     }
 
     function editLog(idx) {
