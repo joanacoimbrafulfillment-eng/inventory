@@ -4,677 +4,357 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Inventory Management System v50</title>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        :root{--primary:#2c3e50;--secondary:#34495e;--accent:#3498db;--success:#2ecc71;--warning:#f39c12;--danger:#e74c3c;--light:#ecf0f1;--dark:#2c3e50;--gray:#95a5a6;--border:#dcdcdc}
-        *{margin:0;padding:0;box-sizing:border-box;font-family:Arial,sans-serif}
-        body{background-color:var(--light);color:var(--dark)}
-        header{background-color:var(--primary);color:#fff;padding:15px 20px;box-shadow:0 2px 5px rgba(0,0,0,.1)}
-        h1{font-size:22px;margin-bottom:5px}
-        .container{display:flex;height:calc(100vh - 70px)}
-        .sidebar{width:250px;background-color:#fff;border-right:1px solid var(--border);overflow-y:auto;padding:20px}
-        .main{flex:1;overflow-y:auto;padding:20px}
-        .nav-item{padding:12px 15px;margin-bottom:5px;border-radius:5px;cursor:pointer;transition:all .2s;display:flex;align-items:center;font-weight:500}
-        .nav-item:hover{background-color:var(--light)}
-        .nav-item.active{background-color:var(--accent);color:#fff}
-        .nav-icon{margin-right:10px;font-size:18px;width:20px;text-align:center}
-        .card{background-color:#fff;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.05);padding:20px;margin-bottom:20px}
-        .card-title{font-size:18px;font-weight:bold;margin-bottom:15px;padding-bottom:10px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
-        .btn{padding:8px 15px;border:none;border-radius:4px;cursor:pointer;font-weight:500;transition:all .2s;display:inline-flex;align-items:center;justify-content:center}
-        .btn-primary{background-color:var(--accent);color:#fff}
-        .btn-secondary{background-color:var(--secondary);color:#fff}
-        .btn-success{background-color:var(--success);color:#fff}
-        .btn-warning{background-color:var(--warning);color:#fff}
-        .btn-danger{background-color:var(--danger);color:#fff}
-        .btn-light{background-color:var(--light);color:var(--dark);border:1px solid var(--border)}
-        .btn:hover{opacity:.9;transform:translateY(-1px)}
-        .btn-icon{margin-right:5px}
-        table{width:100%;border-collapse:collapse;margin-top:15px}
-        th,td{padding:10px;text-align:left;border-bottom:1px solid var(--border)}
-        th{background-color:var(--light);font-weight:600}
-        tr:hover{background-color:rgba(236,240,241,.5)}
-        .input-group{margin-bottom:15px}
-        label{display:block;margin-bottom:5px;font-weight:500}
-        input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px}
-        textarea{resize:vertical;min-height:80px}
-        .row{display:flex;gap:15px;margin-bottom:15px}
-        .col{flex:1}
-        .badge{padding:3px 8px;border-radius:20px;font-size:12px;font-weight:600;display:inline-block}
-        .badge-success{background-color:rgba(46,204,113,.2);color:var(--success)}
-        .badge-warning{background-color:rgba(243,156,18,.2);color:var(--warning)}
-        .badge-danger{background-color:rgba(231,76,60,.2);color:var(--danger)}
-        .month-selector{display:flex;align-items:center;margin-bottom:20px}
-        .month-selector select{width:auto;margin-right:10px}
-        .dashboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:15px;margin-bottom:20px}
-        .stat-card{background-color:#fff;border-radius:8px;padding:15px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
-        .stat-title{font-size:14px;color:var(--gray);margin-bottom:10px}
-        .stat-value{font-size:24px;font-weight:bold}
-        .stat-subtitle{font-size:12px;color:var(--gray);margin-top:5px}
-        .hidden{display:none}
-        .search-bar{display:flex;gap:10px;margin-bottom:15px}
-        .search-bar input{flex:1}
-        .filter-bar{display:flex;gap:10px;margin-bottom:15px;flex-wrap:wrap}
-        .filter-item{display:flex;align-items:center;gap:5px}
-        .filter-item select,.filter-item input{width:auto}
-        .auth-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
-        .auth-bar input{width:220px}
-        .auth-status{margin-left:auto;font-size:12px;opacity:.9}
-        .legend{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0 0 0;font-size:12px;color:#333}
-        .legend .item{display:flex;align-items:center;gap:6px}
-        .legend .swatch{width:16px;height:6px;border-radius:3px;display:inline-block}
-        .qty-cell{display:flex;flex-direction:column;gap:6px}
-        .qty-number{font-size:22px;font-weight:800;line-height:1;color:#000}
-        .qty-bar{height:5px;border-radius:4px;background:#ccc}
-        .small-note{font-size:12px;color:var(--gray)}
-        .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:rgba(52,152,219,.08);color:var(--primary);font-size:12px;border:1px solid rgba(52,152,219,.25)}
-        .pill strong{font-weight:700}
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f7f9; margin: 20px; color: #333; }
+        .container { max-width: 1800px; margin: auto; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        
+        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; background: #2c3e50; color: white; padding: 20px; border-radius: 12px; }
+        .month-selector { background: #34495e; color: white; border: 1px solid #7f8c8d; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        
+        .tabs { display: flex; gap: 5px; margin-bottom: 25px; border-bottom: 2px solid #eee; padding-bottom: 12px; overflow-x: auto; }
+        .tab-btn { padding: 10px 15px; cursor: pointer; border: none; background: #e4e6eb; border-radius: 8px; font-weight: bold; color: #4b4b4b; white-space: nowrap; font-size: 0.85em; transition: 0.3s; }
+        .tab-btn.active { background: #007bff; color: white; transform: translateY(-2px); }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; background: white; font-size: 0.82em; }
+        th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background-color: #f8f9fa; color: #333; text-transform: uppercase; position: sticky; top: 0; z-index: 5; }
+        
+        .section-box { border: 1px solid #eee; padding: 15px; border-radius: 12px; margin-bottom: 20px; background: #fff; }
+        .entry-row { display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; align-items: flex-end; }
+        .input-single { padding: 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.9em; }
+
+        .split-layout { display: flex; gap: 20px; align-items: flex-start; }
+        .split-side-left { flex: 0 0 45%; min-width: 0; }
+        .split-side-right { flex: 0 0 55%; min-width: 0; }
+
+        .bulk-area { width: 100%; height: 300px; padding: 15px; border: 1px solid #ccc; border-radius: 8px; font-family: monospace; box-sizing: border-box; background: #fafafa; font-size: 1em; }
+        
+        .btn { padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 0.85em; transition: 0.2s; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-warning { background: #f39c12; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-info { background: #17a2b8; color: white; }
+        .btn-excel { background: #1d6f42; color: white; }
+        .btn-danger { background: #e74c3c; color: white; }
+        
+        .stock-val { font-weight: bold; }
+        .real-col { color: #000 !important; font-weight: bold; } 
+        .amsped-col { color: #000 !important; font-weight: bold; }
+        .transit-val { color: #000 !important; font-weight: bold; }
+        .confirm-col { color: #000 !important; font-weight: bold; }
+        .order-col { color: #000 !important; font-weight: bold; }
+
+        /* Highlight for urgent orders */
+        .urgent-row { background-color: #fff2f2 !important; border-left: 4px solid #ff7675; }
+
+        .badge { padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8em; }
+        .bg-order { background: #d1d8e0; color: #4b6584; }
+        .bg-sent { background: #fed330; color: #856404; }
+        .bg-received { background: #26de81; color: #ffffff; }
+
+        #initView { position: absolute; top: 120px; left: 0; width: 100%; height: 80%; background: white; z-index: 1000; display: flex; justify-content: center; align-items: center; }
+        .init-card { text-align: center; padding: 60px; border: 3px dashed #dcdde1; border-radius: 20px; background: #f9f9f9; }
+
+        .modal { display:none; position:fixed; z-index:100; left:0; top:0; width:100%; height:100%; background:rgba(0,0,0,0.5); }
+        .modal-content { background:#fff; margin:5% auto; padding:20px; width:75%; border-radius:10px; max-height:80vh; overflow-y:auto; }
+    
+        /* v50: quantity color bars + legend */
+        .qty-wrap { display:flex; flex-direction:column; gap:4px; }
+        .qty-num { font-weight:700; font-size:1.25em; color:#000; line-height:1; }
+        .qty-bar { height:4px; border-radius:4px; background:#e0e0e0; }
+        .qty-neg { background:#ff1744; }          /* < 0 vivid red */
+        .qty-low { background:#ff8a80; }          /* 0-10 light red */
+        .qty-mid { background:#fff59d; }          /* 11-199 light yellow */
+        .qty-good { background:#b9f6ca; }         /* 200-500 light green */
+        .qty-high { background:#81d4fa; }         /* 501-1000+ light blue */
+        .legend { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:10px 0 18px; }
+        .legend-item { display:flex; align-items:center; gap:8px; font-size:12px; color:#444; background:#fafafa; border:1px solid #eee; padding:5px 9px; border-radius:999px; }
+        .legend-swatch { width:12px; height:8px; border-radius:4px; border:1px solid rgba(0,0,0,.08); }
+
     </style>
 </head>
 <body>
-<header>
-    <h1>Inventory Management System</h1>
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
-        <div class="auth-bar">
-            <input id="loginEmail" type="email" placeholder="email (.pt full / .pl general)" autocomplete="username" />
-            <input id="loginPass" type="password" placeholder="password" autocomplete="current-password" />
-            <button class="btn btn-light" id="btnLogin"><span class="btn-icon">🔐</span>Login</button>
-            <button class="btn btn-light hidden" id="btnLogout"><span class="btn-icon">🚪</span>Logout</button>
-            <span class="auth-status" id="authStatus">Not signed in</span>
-        </div>
-        <span class="pill" id="plRealtimeInfo" style="display:none"><strong>PL</strong> realtime general</span>
-    </div>
-</header>
 
 <div class="container">
-    <div class="sidebar">
-        <div class="month-selector">
-            <select id="monthSelect"></select>
-            <button class="btn btn-light" id="newMonthBtn"><span class="btn-icon">+</span>New</button>
-        </div>
+    <div class="header-flex">
+        <h2 style="margin:0">Inventory System v44</h2>
+        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
+            <div><input type="month" id="monthPicker" class="month-selector" onchange="changeMonth()"></div>
 
-        <div class="nav-item active" data-tab="general">
-            <span class="nav-icon">📊</span> General
-        </div>
-        <div class="nav-item" data-tab="warehouse">
-            <span class="nav-icon">🏷️</span> Warehouse
-        </div>
-        <div class="nav-item" data-tab="management">
-            <span class="nav-icon">⚙️</span> Management
-        </div>
-        <div class="nav-item" data-tab="adjustments">
-            <span class="nav-icon">📝</span> Adjustments
-        </div>
-        <div class="nav-item" data-tab="returns">
-            <span class="nav-icon">🔄</span> Returns
-        </div>
-        <div class="nav-item" data-tab="internal">
-            <span class="nav-icon">🧹</span> Internal & Care
-        </div>
-        <div class="nav-item" data-tab="orders">
-            <span class="nav-icon">📦</span> Orders & Shipments
-        </div>
-        <div class="nav-item" data-tab="amsped">
-            <span class="nav-icon">✅</span> After Confirmation
-        </div>
-        <div class="nav-item" data-tab="b2b">
-            <span class="nav-icon">🤝</span> B2B
-        </div>
-        <div class="nav-item" data-tab="movements">
-            <span class="nav-icon">🧾</span> Movements
+            <!-- Auth -->
+            <div id="authPanel" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <span id="authUser" style="font-size:0.9em; opacity:.95;"></span>
+                <input id="loginEmail" class="input-single" style="width:220px" placeholder="email@empresa.pt / .pl">
+                <input id="loginPass" class="input-single" style="width:150px" type="password" placeholder="password">
+                <button id="loginBtn" class="btn btn-success" onclick="doLogin()">Login</button>
+                <button id="logoutBtn" class="btn btn-danger" style="display:none" onclick="doLogout()">Logout</button>
+            </div>
         </div>
     </div>
 
-    <div class="main">
-        <!-- GENERAL TAB -->
-        <div id="general" class="tab-content">
-            <div class="card">
-                <div class="card-title">
-                    <span>Dashboard</span>
-                    <span class="small-note" id="generalLastUpdate">Last update: —</span>
-                </div>
+    <div id="fileProtoWarn" class="section-box" style="display:none; border-left:5px solid #e74c3c;">
+        <b>⚠️ Firebase Auth não funciona em <code>file://</code></b><br>
+        Abre este ficheiro via <b>http://localhost</b> (ex.: <code>python -m http.server 8000</code>) ou publica em Firebase Hosting.
+    </div>
 
-                <div class="dashboard" style="grid-template-columns:repeat(2,minmax(240px,1fr))">
-                    <div class="stat-card">
-                        <div class="stat-title">Total Received</div>
-                        <div class="stat-value" id="totalReceived">0</div>
-                        <div class="stat-subtitle">Items received this month</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-title">Total Transit (Sent)</div>
-                        <div class="stat-value" id="totalTransit">0</div>
-                        <div class="stat-subtitle">Items in transit</div>
-                    </div>
-                </div>
-
-                <div class="legend">
-                    <div class="item"><span class="swatch" style="background:#ff0000"></span><span>&lt; 0</span></div>
-                    <div class="item"><span class="swatch" style="background:#ffb3b3"></span><span>0–10</span></div>
-                    <div class="item"><span class="swatch" style="background:#fff3b0"></span><span>11–199</span></div>
-                    <div class="item"><span class="swatch" style="background:#c6f6d5"></span><span>200–500</span></div>
-                    <div class="item"><span class="swatch" style="background:#cfe8ff"></span><span>501+</span></div>
-                </div>
-
-                <div class="search-bar" style="margin-top:12px">
-                    <input type="text" id="generalSearch" placeholder="Search products...">
-                    <button class="btn btn-primary" id="refreshGeneralBtn"><span class="btn-icon">🔄</span>Refresh</button>
-                    <button class="btn btn-secondary hidden" id="btnBackfillGeneral"><span class="btn-icon">📣</span>Publicar meses p/ PL</button>
-                </div>
-
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Product</th>
-                        <th>Real Stock</th>
-                        <th>Stock after Confirmation</th>
-                        <th>Sent (Transit)</th>
-                    </tr>
-                    </thead>
-                    <tbody id="generalTableBody"></tbody>
-                </table>
-            </div>
+    <div id="initView" style="display:none">
+        <div class="init-card">
+            <h2 id="initTitle">Period not initialized</h2>
+            <button class="btn btn-primary" onclick="initializeMonth(true)">🚀 CARRY OVER PREVIOUS STOCK</button>
+            <br><br>
+            <button class="btn btn-warning" onclick="initializeMonth(false)">📁 START FROM ZERO</button>
         </div>
+    </div>
 
-        <!-- WAREHOUSE TAB -->
-        <div id="warehouse" class="tab-content hidden">
-            <div class="card">
-                <div class="card-title">
-                    <span>Warehouse Master</span>
-                    <div>
-                        <input type="file" id="warehouseFile" accept=".csv,.xlsx" style="display:none">
-                        <button class="btn btn-primary" id="warehouseUploadBtn"><span class="btn-icon">⬆️</span>Upload</button>
-                        <button class="btn btn-secondary" id="warehouseExportBtn"><span class="btn-icon">⬇️</span>Export CSV</button>
-                    </div>
-                </div>
-                <div class="small-note">Upload columns: A Product, B Position, C Dimensions, D Weight. Volume is auto from Dimensions.</div>
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Product</th>
-                        <th>Position</th>
-                        <th>Dimensions</th>
-                        <th>Weight</th>
-                        <th>Volume (auto)</th>
-                    </tr>
-                    </thead>
-                    <tbody id="warehouseTableBody"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- MANAGEMENT TAB -->
-        <div id="management" class="tab-content hidden">
-            <div class="card">
-                <div class="card-title">
-                    <span>Initial Quantities</span>
-                    <div>
-                        <input type="file" id="managementInitFile" accept=".csv,.xlsx" style="display:none">
-                        <button class="btn btn-primary" id="btnImportInit"><span class="btn-icon">⬆️</span>Import Init (A Product, B Qty)</button>
-                        <button class="btn btn-secondary" id="btnExportInit"><span class="btn-icon">⬇️</span>Export CSV</button>
-                    </div>
-                </div>
-                <div class="row">
-                    <div class="col">
-                        <label>Product</label>
-                        <input list="productList" id="initProduct">
-                    </div>
-                    <div class="col">
-                        <label>Initial Qty</label>
-                        <input type="number" id="initQty" value="0">
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-success" id="addInitBtn"><span class="btn-icon">+</span>Add/Update</button>
-                    </div>
-                </div>
-
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Product</th>
-                        <th>Initial Qty</th>
-                    </tr>
-                    </thead>
-                    <tbody id="initTableBody"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- ADJUSTMENTS TAB -->
-        <div id="adjustments" class="tab-content hidden">
-            <div class="card">
-                <div class="card-title">
-                    <span>Adjustments</span>
-                </div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Adjustment Type</label>
-                        <select id="adjustmentType">
-                            <option value="received">Received</option>
-                            <option value="lost">Lost</option>
-                            <option value="other">Other</option>
-                        </select>
-                    </div>
-                    <div class="col">
-                        <label>Product</label>
-                        <input list="productList" id="adjustProduct">
-                    </div>
-                    <div class="col">
-                        <label>Quantity</label>
-                        <input type="number" id="adjustQty" value="1">
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-success" id="addAdjustBtn"><span class="btn-icon">+</span>Add</button>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Bulk (one per line: PRODUCT ... QTY)</label>
-                        <textarea id="adjustBulk"></textarea>
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-primary" id="addAdjustBulkBtn"><span class="btn-icon">⚡</span>Process Bulk</button>
-                    </div>
-                </div>
-
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Type</th>
-                        <th>Product</th>
-                        <th>Qty</th>
-                        <th>By</th>
-                        <th>Actions</th>
-                    </tr>
-                    </thead>
-                    <tbody id="adjustTableBody"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- RETURNS TAB -->
-        <div id="returns" class="tab-content hidden">
-            <div class="card">
-                <div class="card-title">
-                    <span>Returns</span>
-                </div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Return Type</label>
-                        <select id="returnType">
-                            <option value="refund">Refund</option>
-                            <option value="returns">Return to Stock</option>
-                            <option value="recovered">Recovered</option>
-                        </select>
-                    </div>
-                    <div class="col">
-                        <label>Product</label>
-                        <input list="productList" id="returnProduct">
-                    </div>
-                    <div class="col">
-                        <label>Quantity</label>
-                        <input type="number" id="returnQty" value="1">
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-success" id="addReturnBtn"><span class="btn-icon">+</span>Add</button>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Bulk (one per line: PRODUCT ... QTY)</label>
-                        <textarea id="returnsBulk"></textarea>
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end;gap:10px">
-                        <button class="btn btn-primary" id="addReturnsBulkBtn"><span class="btn-icon">⚡</span>Process Bulk</button>
-                    </div>
-                </div>
-
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Type</th>
-                        <th>Product</th>
-                        <th>Qty</th>
-                        <th>By</th>
-                        <th>Actions</th>
-                    </tr>
-                    </thead>
-                    <tbody id="returnsTableBody"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- INTERNAL TAB -->
-        <div id="internal" class="tab-content hidden">
-            <div class="card">
-                <div class="card-title"><span>Internal & Care</span></div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Date</label>
-                        <input type="date" id="internalDate">
-                    </div>
-                    <div class="col">
-                        <label>Type</label>
-                        <select id="internalType">
-                            <option value="washing">Washing</option>
-                            <option value="cleaning">Cleaning</option>
-                            <option value="repair">Repair</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Product</label>
-                        <input list="productList" id="internalProduct">
-                    </div>
-                    <div class="col">
-                        <label>Quantity</label>
-                        <input type="number" id="internalQty" value="1">
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-success" id="addInternalBtn"><span class="btn-icon">+</span>Add</button>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Bulk (one per line: PRODUCT ... QTY)</label>
-                        <textarea id="internalBulk"></textarea>
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-primary" id="addInternalBulkBtn"><span class="btn-icon">⚡</span>Process Bulk</button>
-                    </div>
-                </div>
-
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Type</th>
-                        <th>Product</th>
-                        <th>Qty</th>
-                        <th>By</th>
-                        <th>Actions</th>
-                    </tr>
-                    </thead>
-                    <tbody id="internalTableBody"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- ORDERS TAB -->
-        <div id="orders" class="tab-content hidden">
-            <div class="card">
-                <div class="card-title"><span>Orders & Shipments</span></div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Order Date</label>
-                        <input type="date" id="orderDate">
-                    </div>
-                    <div class="col">
-                        <label>Product</label>
-                        <input list="productList" id="orderProduct">
-                    </div>
-                    <div class="col">
-                        <label>Quantity</label>
-                        <input type="number" id="orderQty" value="1">
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-success" id="addOrderBtn"><span class="btn-icon">+</span>Register Order</button>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Bulk ORDER (one per line: PRODUCT ... QTY)</label>
-                        <textarea id="orderBulk"></textarea>
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-primary" id="addOrderBulkBtn"><span class="btn-icon">⚡</span>Process ORDER Bulk</button>
-                    </div>
-                </div>
-
-                <hr style="border:none;border-top:1px solid var(--border);margin:15px 0">
-
-                <div class="row">
-                    <div class="col">
-                        <label>Shipment Date</label>
-                        <input type="date" id="shipDate">
-                    </div>
-                    <div class="col">
-                        <label>Product</label>
-                        <input list="productList" id="shipProduct">
-                    </div>
-                    <div class="col">
-                        <label>Quantity</label>
-                        <input type="number" id="shipQty" value="1">
-                    </div>
-                    <div class="col">
-                        <label>Obs (optional)</label>
-                        <input type="text" id="shipNote" placeholder="e.g., pallet 3 / carrier / etc.">
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-warning" id="addShipBtn"><span class="btn-icon">🚚</span>Register SENT</button>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Bulk SENT (one per line: PRODUCT ... QTY)</label>
-                        <textarea id="shipBulk"></textarea>
-                    </div>
-                    <div class="col">
-                        <label>Obs for Bulk (optional)</label>
-                        <input type="text" id="shipBulkNote" placeholder="applied to all bulk lines">
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-primary" id="addShipBulkBtn"><span class="btn-icon">⚡</span>Process SENT Bulk</button>
-                    </div>
-                </div>
-
-                <div class="card" style="margin-top:15px">
-                    <div class="card-title">
-                        <span>Open Shipments (SENT) — Receive Inline</span>
-                        <span class="small-note">Enter received qty/date per line. Partial receive keeps remaining SENT.</span>
-                    </div>
-                    <table>
-                        <thead>
-                        <tr>
-                            <th>From Month</th>
-                            <th>Sent Date</th>
-                            <th>Product</th>
-                            <th>Sent Qty</th>
-                            <th>Remaining</th>
-                            <th>Obs</th>
-                            <th>Qty Received</th>
-                            <th>Arrival Date</th>
-                            <th>Receive</th>
-                        </tr>
-                        </thead>
-                        <tbody id="openShipmentsBody"></tbody>
-                    </table>
-                </div>
-
-                <div class="card" style="margin-top:15px">
-                    <div class="card-title"><span>History</span></div>
-                    <table>
-                        <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Type</th>
-                            <th>Product</th>
-                            <th>Qty</th>
-                            <th>Obs</th>
-                            <th>By</th>
-                        </tr>
-                        </thead>
-                        <tbody id="ordersTableBody"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-
-        <!-- AMSPED TAB -->
-        <div id="amsped" class="tab-content hidden">
-            <div class="card">
-                <div class="card-title"><span>After Confirmation</span></div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Product</label>
-                        <input list="productList" id="amspedProduct">
-                    </div>
-                    <div class="col">
-                        <label>Quantity</label>
-                        <input type="number" id="amspedQty" value="1">
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-success" id="addAmspedBtn"><span class="btn-icon">+</span>Add</button>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Bulk (one per line: PRODUCT ... QTY)</label>
-                        <textarea id="amspedBulk"></textarea>
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-primary" id="addAmspedBulkBtn"><span class="btn-icon">⚡</span>Process Bulk</button>
-                    </div>
-                </div>
-
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Product</th>
-                        <th>Qty</th>
-                        <th>By</th>
-                        <th>Actions</th>
-                    </tr>
-                    </thead>
-                    <tbody id="amspedTableBody"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- B2B TAB -->
-        <div id="b2b" class="tab-content hidden">
-            <div class="card">
-                <div class="card-title"><span>B2B</span></div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Product</label>
-                        <input list="productList" id="b2bProduct">
-                    </div>
-                    <div class="col">
-                        <label>Quantity</label>
-                        <input type="number" id="b2bQty" value="1">
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-success" id="addB2bBtn"><span class="btn-icon">+</span>Add</button>
-                    </div>
-                </div>
-
-                <div class="row">
-                    <div class="col">
-                        <label>Bulk (one per line: PRODUCT ... QTY)</label>
-                        <textarea id="b2bBulk"></textarea>
-                    </div>
-                    <div class="col" style="display:flex;align-items:flex-end">
-                        <button class="btn btn-primary" id="addB2bBulkBtn"><span class="btn-icon">⚡</span>Process Bulk</button>
-                    </div>
-                </div>
-
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Product</th>
-                        <th>Qty</th>
-                        <th>By</th>
-                        <th>Actions</th>
-                    </tr>
-                    </thead>
-                    <tbody id="b2bTableBody"></tbody>
-                </table>
-            </div>
-        </div>
-
-        <!-- MOVEMENTS TAB -->
-        <div id="movements" class="tab-content hidden">
-            <div class="card">
-                <div class="card-title">
-                    <span>All Movements</span>
-                    <div>
-                        <button class="btn btn-secondary" id="exportMovementsCsvBtn"><span class="btn-icon">⬇️</span>Export CSV</button>
-                        <button class="btn btn-secondary" id="exportMovementsXlsxBtn"><span class="btn-icon">⬇️</span>Export XLSX</button>
-                    </div>
-                </div>
-
-                <div class="filter-bar">
-                    <div class="filter-item">
-                        <label style="margin:0">From</label>
-                        <input type="date" id="movFrom">
-                    </div>
-                    <div class="filter-item">
-                        <label style="margin:0">To</label>
-                        <input type="date" id="movTo">
-                    </div>
-                    <div class="filter-item">
-                        <label style="margin:0">Tab</label>
-                        <select id="movTab">
-                            <option value="">All</option>
-                        </select>
-                    </div>
-                    <div class="filter-item">
-                        <label style="margin:0">Product</label>
-                        <input type="text" id="movProductSearch" placeholder="search...">
-                    </div>
-                    <button class="btn btn-primary" id="movApplyBtn"><span class="btn-icon">🔎</span>Apply</button>
-                </div>
-
-                <table>
-                    <thead>
-                    <tr>
-                        <th>Month</th>
-                        <th>Date</th>
-                        <th>Tab</th>
-                        <th>Type</th>
-                        <th>Product</th>
-                        <th>Qty</th>
-                        <th>Obs</th>
-                        <th>By</th>
-                    </tr>
-                    </thead>
-                    <tbody id="movementsTableBody"></tbody>
-                </table>
-            </div>
+    <div id="mainInterface">
+        <div class="tabs">
+            <div class="tab-btn active" onclick="openTab('general')">📋 General</div>
+            <div class="tab-btn" onclick="openTab('analytics')">📊 Analytics</div>
+            <div class="tab-btn" onclick="openTab('shipments')">📦 Orders & Shipments</div>
+            <div class="tab-btn" onclick="openTab('adjustments')">🔧 Adjustments</div>
+            <div class="tab-btn" onclick="openTab('returns')">🔄 Returns & Recovered</div>
+            <div class="tab-btn" onclick="openTab('internal')">🏢 Internal & Care</div>
+            <div class="tab-btn" onclick="openTab('picking')">📦 Picking Out</div>
+            <div class="tab-btn" onclick="openTab('amsped')">🛒 Amsped Sales</div>
+            <div class="tab-btn" onclick="openTab('b2b')">🤝 B2B</div>
+            <div class="tab-btn" onclick="openTab('movements')">🧾 Movements</div>
+            <div class="tab-btn" onclick="openTab('warehouse')">🏷️ Warehouse</div>
+            <div class="tab-btn" onclick="openTab('management')">⚙️ Management</div>
         </div>
 
         <datalist id="productList"></datalist>
+
+        <!-- 1. GENERAL -->
+        <div id="general" class="tab-content active">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                <div id="generalUpdatedAt" style="font-size:12px; color:#666;"></div>
+                <button class="btn btn-secondary" style="padding:6px 10px; font-size:12px;" onclick="reconnectGeneral()">🔄 Reconnect</button>
+                <button id="btnBackfillGeneral" class="btn btn-success" style="padding:6px 10px; font-size:12px; margin-left:8px; display:none;" onclick="backfillGeneralViews()">📣 Publicar meses p/ PL</button>
+            </div>
+            <div id="dash-general" class="dashboard-grid" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px;"></div>
+
+            <div class="legend" id="qtyLegend">
+                <div class="legend-item"><span class="legend-swatch qty-neg"></span><span>&lt; 0</span></div>
+                <div class="legend-item"><span class="legend-swatch qty-low"></span><span>0–10</span></div>
+                <div class="legend-item"><span class="legend-swatch qty-mid"></span><span>11–199</span></div>
+                <div class="legend-item"><span class="legend-swatch qty-good"></span><span>200–500</span></div>
+                <div class="legend-item"><span class="legend-swatch qty-high"></span><span>501–1000+</span></div>
+            </div>
+
+            <input type="text" id="search" class="search-box" style="width:100%; padding:12px; margin-bottom:15px; border-radius:8px; border:1px solid #ddd;" placeholder="Search SKU or Name..." onkeyup="filterTable('bodyGeneral', 'search')">
+            <table>
+                <thead>
+                    <tr><th>Products (Sorted)</th><th>Real Stock</th><th>Stock after Amsped</th><th>SENT (Transit)</th></tr>
+                </thead>
+                <tbody id="bodyGeneral"></tbody>
+            </table>
+        </div>
+
+        <!-- 2. ANALYTICS -->
+        <div id="analytics" class="tab-content">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                <div style="grid-column: span 2; height: 350px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Daily Picking Activity</h3><canvas id="dailyChart"></canvas></div>
+                <div style="height: 300px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Top Sold</h3><canvas id="topSoldChart"></canvas></div>
+                <div style="height: 300px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Returns</h3><canvas id="returnsChart"></canvas></div>
+                <div class="section-box" style="grid-column: span 2;">
+                    <h3>🚩 Procurement Gaps</h3>
+                    <table id="disTable"><thead><tr><th>SKU</th><th>Ordered</th><th>Received</th><th style="color:red">Missing</th></tr></thead><tbody id="bodyDiscrepancies"></tbody></table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. ORDERS & SHIPMENTS (PRIORITY SORTING v44) -->
+        <div id="shipments" class="tab-content">
+            <div class="split-layout">
+                <!-- Left: Support Table Sorted by Procurement Priority -->
+                <div class="split-side-left">
+                    <div class="section-box">
+                        <h3>📊 Procurement Priority Analysis</h3>
+                        <p style="font-size:0.75em; color:gray; margin-bottom:10px;">🔴 Rows highlighted in pink: (Real + SENT) < TO CONFIRM. Needs immediate ordering.</p>
+                        <input type="text" id="searchOrds" class="search-box" style="width:100%; padding:8px;" placeholder="Filter..." onkeyup="filterTable('bodyOrderInventory', 'searchOrds')">
+                        <div style="max-height: 750px; overflow-y: auto;">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Real</th>
+                                        <th>Amsped</th>
+                                        <th>SENT</th>
+                                        <th>TO CONFIRM</th>
+                                        <th>ORDER</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bodyOrderInventory"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <!-- Right: Inputs & History -->
+                <div class="split-side-right">
+                    <div class="section-box" style="border-left: 5px solid #8e44ad; background: #fafafa;">
+                        <h3>🔄 1. Update TO CONFIRM (Overwrite)</h3>
+                        <div class="entry-row">
+                            <input type="text" list="productList" id="confSku" class="input-single" style="width:180px" placeholder="SKU">
+                            <input type="number" id="confQty" class="input-single" style="width:70px" placeholder="New Qty">
+                            <button class="btn btn-info" onclick="updateToConfirm('single')">Update SKU</button>
+                        </div>
+                        <textarea id="inputToConfirm" class="bulk-area" style="height:100px" placeholder="Bulk: SKU QTY"></textarea>
+                        <div style="display: flex; justify-content: space-between;">
+                            <button class="btn btn-info" onclick="updateToConfirm('bulk')">Overwrite Bulk</button>
+                            <button class="btn btn-danger" onclick="clearToConfirm()">❌ CLEAR ALL TO CONFIRM</button>
+                        </div>
+                    </div>
+
+                    <div class="section-box">
+                        <h3>📝 2. Register Order (Intent)</h3>
+                        <div class="entry-row">
+                            <input type="date" id="ordDate" class="input-single today-date">
+                            <input type="text" list="productList" id="ordSku" class="input-single" style="width:180px" placeholder="SKU">
+                            <input type="number" id="ordQty" class="input-single" style="width:70px" placeholder="Qty">
+                            <button class="btn btn-primary" onclick="addOrderLog('ORDER')">Save Order</button>
+                        </div>
+                        <textarea id="inputOrdBulk" class="bulk-area" style="height:90px" placeholder="Bulk: Produto QTY"></textarea>
+                        <button class="btn btn-primary" onclick="processBulkOrderLog('ORDER')">Bulk Process</button>
+                    </div>
+
+                    <div class="section-box">
+                        <h3>🚢 3. Register Shipment (SENT)</h3>
+                        <div class="entry-row">
+                            <input type="date" id="shipDate" class="input-single today-date">
+                            <input type="text" list="productList" id="shipSku" class="input-single" style="width:180px" placeholder="SKU">
+                            <input type="number" id="shipQty" class="input-single" style="width:70px" placeholder="Qty">
+                            <input type="text" id="shipNote" class="input-single" style="width:220px" placeholder="Obs (opcional)">
+                            <button class="btn btn-warning" onclick="addOrderLog('SENT')">Register SENT</button>
+                        </div>
+                        <textarea id="inputShipBulk" class="bulk-area" style="height:90px" placeholder="Bulk: Produto QTY"></textarea>
+                        <button class="btn btn-warning" onclick="processBulkOrderLog('SENT')">Bulk Process</button>
+                    </div>
+
+                    <div class="section-box">
+                        <h3>📋 Workflow History</h3>
+                        <table>
+                            <thead><tr><th>Date</th><th>Product</th><th>Status</th><th>Qty</th><th>Arrival</th><th>Obs</th><th>Actions</th></tr></thead>
+                            <tbody id="bodyShipments"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. ADJUSTMENTS -->
+        <div id="adjustments" class="tab-content"><div class="section-box"><h3>🔧 Global Adjustments</h3><div class="entry-row"><input type="date" id="dateAdjust" class="input-single today-date"><input type="text" list="productList" id="singleAdjustSku" class="input-single" style="width:200px" placeholder="SKU"><input type="number" id="singleAdjustQty" class="input-single" style="width:70px" placeholder="Qty"><input type="text" id="singleAdjustNote" class="input-single" placeholder="Reason"><button class="btn btn-warning" onclick="addSingle('adjust')">Apply</button></div><textarea id="inputAdjust" class="bulk-area" placeholder="Bulk: SKU QTY"></textarea><button class="btn btn-warning" onclick="processBulk('adjust')">Process Bulk</button><div class="recent-entries-box"><h4>🕒 Recent Adjustments</h4><table id="recent-adjust"></table></div></div></div>
+
+        <!-- OPERATIVE TABS (Returns, Internal, Picking, Amsped) -->
+        <div id="returns" class="tab-content"><div class="section-box"><h3>🔄 Returns</h3><div class="entry-row"><select id="typeReturns" class="input-single"><option value="returns">Return</option><option value="refunds">Refund</option><option value="recovered">Recovered</option></select><input type="date" id="dateReturns" class="input-single today-date"><input type="text" list="productList" id="singleReturnsSku" class="input-single" style="width:250px"><input type="number" id="singleReturnsQty" class="input-single" style="width:70px" value="1"><button class="btn btn-info" onclick="addSingleFromSelect('Returns')">Update</button></div><textarea id="inputReturns" class="bulk-area" placeholder="Bulk: Produto QTY"></textarea><button class="btn btn-info" onclick="processBulkFromSelect('Returns')">Bulk Process</button><div class="recent-entries-box"><h4>🕒 Recent</h4><table id="recent-returns"></table></div></div></div>
+        <div id="internal" class="tab-content"><div class="section-box"><h3>🏢 Internal Use</h3><div class="entry-row"><select id="typeInternal" class="input-single"><option value="customerCare">Customer Care</option><option value="awards">Awards</option><option value="officeNeeds">Office Needs</option></select><input type="date" id="dateInternal" class="input-single today-date"><input type="text" list="productList" id="singleInternalSku" class="input-single" style="width:250px"><input type="number" id="singleInternalQty" class="input-single" style="width:70px" value="1"><button class="btn btn-danger" onclick="addSingleFromSelect('Internal')">Record</button></div><textarea id="inputInternal" class="bulk-area" placeholder="Bulk: Produto QTY"></textarea><button class="btn btn-danger" onclick="processBulkFromSelect('Internal')">Bulk Process</button><div class="recent-entries-box"><h4>🕒 Recent</h4><table id="recent-internal"></table></div></div></div>
+        <div id="picking" class="tab-content"><div class="section-box"><h3>📦 Picking Out</h3><div class="entry-row"><input type="date" id="datePicking" class="input-single today-date"><input type="text" list="productList" id="singlePickingSku" class="input-single" style="width:250px"><input type="number" id="singlePickingQty" class="input-single" style="width:70px" value="1"><button class="btn btn-primary" onclick="addSingle('picking')">Add</button></div><textarea id="inputPicking" class="bulk-area"></textarea><button class="btn btn-primary" onclick="processBulk('picking')">Bulk Process</button><div class="recent-entries-box"><h4>🕒 Recent</h4><table id="recent-picking"></table></div></div></div>
+        <div id="amsped" class="tab-content"><div class="section-box"><h3>🛒 Amsped Sales</h3><div class="entry-row"><input type="date" id="dateAmsped" class="input-single yesterday-date"><input type="text" list="productList" id="singleAmspedSku" class="input-single" style="width:250px"><input type="number" id="singleAmspedQty" class="input-single" style="width:70px" value="1"><button class="btn btn-primary" onclick="addSingle('amsped')">Add</button></div><textarea id="inputAmsped" class="bulk-area"></textarea><button class="btn btn-primary" onclick="processBulk('amsped')">Bulk Process</button><div class="recent-entries-box"><h4>🕒 Recent</h4><table id="recent-amsped"></table></div></div></div>
+
+        <div id="b2b" class="tab-content"><div class="section-box"><h3>🤝 B2B</h3><div class="entry-row"><input type="date" id="dateB2b" class="input-single today-date"><input type="text" list="productList" id="singleB2bSku" class="input-single" style="width:250px"><input type="number" id="singleB2bQty" class="input-single" style="width:70px" value="1"><button class="btn btn-primary" onclick="addSingle('b2b')">Add</button></div><textarea id="inputB2b" class="bulk-area" placeholder="Bulk: Produto QTY"></textarea><button class="btn btn-primary" onclick="processBulk('b2b')">Bulk Process</button><div class="recent-entries-box"><h4>🕒 Recent</h4><table id="recent-b2b"></table></div></div></div>
+
+        <!-- 8. MANAGEMENT -->
+   
+        <!-- WAREHOUSE MASTER (Locations / Dimensions) -->
+        
+        <!-- MOVEMENTS -->
+        <div id="movements" class="tab-content">
+            <div class="card">
+                <h2>🧾 Movements (all tabs)</h2>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end;">
+                    <div>
+                        <label>From</label><br>
+                        <input type="date" id="movFrom" class="input-single" onchange="renderMovements()">
+                    </div>
+                    <div>
+                        <label>To</label><br>
+                        <input type="date" id="movTo" class="input-single" onchange="renderMovements()">
+                    </div>
+                    <div>
+                        <label>Search product</label><br>
+                        <input type="text" id="movSearch" class="input-single" placeholder="Type to filter..." onkeyup="renderMovements()">
+                    </div>
+                    
+                    <div>
+                        <label>Separador</label><br>
+                        <select id="movTab" class="input-single" onchange="renderMovements()">
+                            <option value="all">All</option>
+                        </select>
+                    </div>
+<div>
+                        <label>View</label><br>
+                        <select id="movView" class="input-single" onchange="renderMovements()">
+                            <option value="detailed">Detailed</option>
+                            <option value="daily">Daily summary</option>
+                        </select>
+                    </div>
+                    <button class="btn" onclick="exportMovementsCSV()">⬇️ Export CSV</button>
+                    <button class="btn" onclick="exportMovementsXLSX()">⬇️ Export XLSX</button>
+                </div>
+                <p style="margin-top:8px; color:#666;">Exports use <b>;</b> as separator for Excel.</p>
+            </div>
+
+            <div class="card">
+                <div id="movementsSummary" style="margin-bottom:10px;"></div>
+                <table>
+                    <thead id="movHead"></thead>
+                    <tbody id="movBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+<div id="warehouse" class="tab-content">
+            <div class="section-box" style="display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+                <input id="warehouseFile" type="file" accept=".csv,.xlsx,.xls" class="btn" style="background:#fff; border:1px solid #ddd; padding:10px; border-radius:8px;" />
+                <button class="btn btn-success" onclick="importWarehouseFile()">⬆️ Import</button>
+                <button class="btn" onclick="addWarehouseRow()">+ Add row</button>
+                <button class="btn btn-excel" onclick="exportWarehouseCSV()">⬇️ Export CSV</button>
+                <button class="btn btn-danger" onclick="clearWarehouse()">🗑️ Clear</button>
+            </div>
+
+            <input type="text" id="searchWarehouse" class="search-box" style="width:100%; padding:12px; margin:10px 0 15px; border-radius:8px; border:1px solid #ddd;" placeholder="Search product or position..." onkeyup="filterTable('bodyWarehouse', 'searchWarehouse')">
+
+            <div style="overflow-x:auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Produto</th>
+                            <th>Posição</th>
+                            <th>Dimensões</th>
+                            <th>Peso</th>
+                            <th>Volume</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bodyWarehouse"></tbody>
+                </table>
+            </div>
+
+            <small style="display:block; margin-top:10px; color:#666;">
+                Dica: depois de importar, podes editar cada célula (uma a uma). As alterações ficam guardadas na Firebase (Firestore).
+            </small>
+        </div>
+
+             <div id="management" class="tab-content">
+            <div class="section-box"><button class="btn btn-excel" onclick="exportFullExcel()">📊 Full XLSX Report</button><button class="btn btn-success" onclick="addNewProductMaster()">+ New Product</button><button class="btn btn-danger" onclick="resetMonth()">⚠️ Wipe Month</button><span style="margin-left:12px"></span><input type="file" id="mgmtInitUpload" accept=".csv,.xlsx,.xls" style="display:inline-block; max-width:260px;"><button class="btn btn-success" onclick="importInitQtyFile()">⬆️ Import Init (Produto, Quantidade)</button></div>
+            <div style="overflow-x: auto;"><table><thead><tr><th>Produto</th><th>Init</th><th>Received</th><th>Adj</th><th>Pick</th><th>Amp</th><th>B2B</th><th>Act</th></tr></thead><tbody id="bodyManagement"></tbody></table></div>
+        </div>
     </div>
 </div>
 
+<div id="historyModal" class="modal"><div class="modal-content"><h3 id="histTitle">Movements</h3><table id="histTable"><thead><tr><th>Date</th><th>Type</th><th>Qty</th><th>Note</th><th>Actions</th></tr></thead><tbody id="histBody"></tbody></table><br><button class="btn btn-danger" onclick="closeModal()">Close</button></div></div>
+
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
-  import {
-    getAuth, onAuthStateChanged,
-    signInWithEmailAndPassword, signOut,
-    setPersistence, browserLocalPersistence
-  } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-  import {
-    initializeFirestore,
-    doc, setDoc, getDoc, onSnapshot, serverTimestamp
-  } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+  import { initializeFirestore, doc, getDoc, setDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBvJIwx6KDSrwdnJ1o8vqvttsv9dzycY6g",
@@ -687,1048 +367,1667 @@
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
+  const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
 
-  const db = initializeFirestore(app, {
-    experimentalForceLongPolling: true,
-    useFetchStreams: false
+  // Expose minimal helpers to the legacy (non-module) code
+  window.fb = {
+    auth,
+    db,
+    async getDocData(pathParts) {
+      const ref = doc(db, ...pathParts);
+      const snap = await getDoc(ref);
+      return snap.exists() ? snap.data() : null;
+    },
+    async setDocData(pathParts, data) {
+      const ref = doc(db, ...pathParts);
+      await setDoc(ref, data, { merge: true });
+    },
+    async listDocIds(collectionName) {
+      const colRef = collection(db, collectionName);
+      const snap = await getDocs(colRef);
+      return snap.docs.map(d => d.id);
+    },
+    subscribeDocData(pathParts, cb) {
+      const ref = doc(db, ...pathParts);
+      window.fb.lastError = null;
+      return onSnapshot(ref, { includeMetadataChanges: true }, (snap) => {
+        window.fb.lastError = null;
+        cb(snap.exists() ? snap.data() : null);
+      }, (err) => {
+        window.fb.lastError = err;
+        console.error('Firestore subscribe failed', err);
+        cb(null);
+      });
+    },
+    signInWithEmailAndPassword: (email, pass) => signInWithEmailAndPassword(auth, email, pass),
+    signOut: () => signOut(auth),
+  };
+
+  function roleFromEmail(email){
+    if (!email) return "none";
+    const e = String(email).toLowerCase().trim();
+    // Support both full domains (e.g., user@empresa.pt / user@empresa.pl)
+    // and very short domains (e.g., user@pt / user@pl) if you use them internally.
+    if (e.endsWith(".pt") || e.endsWith("@pt")) return "pt";
+    if (e.endsWith(".pl") || e.endsWith("@pl")) return "pl";
+    return "none";
+  }
+
+  function setAuthUI(user){
+    const userEl = document.getElementById("authUser");
+    const loginBtn = document.getElementById("loginBtn");
+    const logoutBtn = document.getElementById("logoutBtn");
+    const emailIn = document.getElementById("loginEmail");
+    const passIn = document.getElementById("loginPass");
+
+    if (user){
+      userEl.textContent = user.email + " ✅";
+      loginBtn.style.display = "none";
+      emailIn.style.display = "none";
+      passIn.style.display = "none";
+      logoutBtn.style.display = "";
+    } else {
+      userEl.textContent = "";
+      loginBtn.style.display = "";
+      emailIn.style.display = "";
+      passIn.style.display = "";
+      logoutBtn.style.display = "none";
+    }
+  }
+
+  function applyRoleToTabs(role){
+    // PL: only show General. PT: show all.
+    const tabBtns = Array.from(document.querySelectorAll(".tabs .tab-btn"));
+    const tabContents = Array.from(document.querySelectorAll(".tab-content"));
+
+    if (role === "pl"){
+      tabBtns.forEach(btn => {
+        const isGeneral = btn.getAttribute("onclick")?.includes("openTab('general')");
+        btn.style.display = isGeneral ? "" : "none";
+      });
+      tabContents.forEach(c => c.id === "general" ? c.classList.add("active") : c.classList.remove("active"));
+      // activate first visible tab button
+      tabBtns.forEach(b => b.classList.remove("active"));
+      const g = tabBtns.find(btn => btn.style.display !== "none");
+      if (g) g.classList.add("active");
+    } else if (role === "pt"){
+      tabBtns.forEach(btn => btn.style.display = "");
+    } else {
+      // not allowed
+      tabBtns.forEach(btn => btn.style.display = "none");
+    }
+  }
+
+  // Login/Logout buttons called from HTML
+  window.doLogin = async function(){
+    try{
+      const email = document.getElementById("loginEmail").value.trim();
+      const pass = document.getElementById("loginPass").value;
+      if(!email || !pass) return alert("Preenche email e password.");
+      await signInWithEmailAndPassword(auth, email, pass);
+    } catch (e){
+      alert("Login falhou: " + (e?.message || e));
+    }
+  };
+
+  window.doLogout = async function(){
+    try{
+      await signOut(auth);
+    } catch(e){
+      alert("Logout falhou: " + (e?.message || e));
+    }
+  };
+
+  onAuthStateChanged(auth, async (user) => {
+    setAuthUI(user);
+
+    // file:// warning
+    const warn = document.getElementById("fileProtoWarn");
+    if (warn) warn.style.display = (location.protocol === "file:") ? "" : "none";
+
+    const main = document.getElementById("mainInterface");
+    const init = document.getElementById("initView");
+
+    if (!user){
+      if (main) main.style.display = "none";
+      if (init) init.style.display = "none";
+      applyRoleToTabs("none");
+      return;
+    }
+
+    const role = roleFromEmail(user.email);
+    if (role === "none"){
+      if (main) main.style.display = "none";
+      if (init) init.style.display = "none";
+      applyRoleToTabs("none");
+      alert("Sem permissões: apenas emails terminados em .pt (admin) ou .pl (General-only).");
+      return;
+    }
+
+    applyRoleToTabs(role);
+
+    // Start/load app data (defined in the legacy script)
+    if (typeof window.startAppAfterAuth === "function"){
+      await window.startAppAfterAuth(role);
+    }
   });
-
-  await setPersistence(auth, browserLocalPersistence);
-
-  window.__fb = { auth, db, doc, setDoc, getDoc, onSnapshot, serverTimestamp, signInWithEmailAndPassword, signOut };
 </script>
 
 <script>
-/* =========================
-   Data + Helpers
-========================= */
-const WARRANTY_LAST = new Set(["WARRANTY PT","WARRANTY ES"]);
+    const initialSkus = []; // (Deprecated) Product list now comes from the Warehouse upload (tab “🏷️ Warehouse”).
 
-function todayISO(){
-  const d=new Date();
-  return d.toISOString().slice(0,10);
-}
-function monthIdFromDate(dateStr){
-  return dateStr.slice(0,7);
-}
-function ensureMonthList(select){
-  const now=new Date();
-  const y=now.getFullYear();
-  const m=String(now.getMonth()+1).padStart(2,'0');
-  const cur=`${y}-${m}`;
-  if(!select.options.length){
-    for(let i=0;i<24;i++){
-      const d=new Date(y, now.getMonth()-i, 1);
-      const id=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
-      const opt=document.createElement('option');
-      opt.value=id; opt.textContent=id;
-      select.appendChild(opt);
-    }
-  }
-  select.value=cur;
-  return cur;
-}
+    let currentMonth = "", products = [], logs = [], charts = {};
+    let warehouseItems = [];
+    let allData = {};
+    let userRole = 'pt';
+    let generalViewItems = [];
+    let generalUnsub = null;
+    // Cross-month open SENT shipments (so receiving next month adds stock in the month received)
+    let openSentLogs = []; // [{fromMonth, id, date, sku, qty, by, uid}]
+    let saveTimer = null;
+    let generalSaveTimer = null;
+    let lastSavedAt = 0;
 
-function parseBulkLines(text){
-  const lines = (text||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  const out=[];
-  for(const line of lines){
-    const m=line.match(/^(.*)\s+(-?\d+(?:\.\d+)?)$/);
-    if(!m) continue;
-    const product=m[1].trim();
-    const qty=Number(m[2]);
-    if(!product || !Number.isFinite(qty)) continue;
-    out.push({product, qty});
-  }
-  return out;
-}
+    // Called by Firebase Auth module after login
+    window.startAppAfterAuth = async function(role) {
+        userRole = role || 'pt';
 
-function dimToVolume(dimStr){
-  if(!dimStr) return 0;
-  const nums = (dimStr.match(/[\d]+(?:[.,]\d+)?/g)||[]).map(x=>Number(String(x).replace(',','.'))).filter(n=>Number.isFinite(n));
-  if(nums.length<3) return 0;
-  return +(nums[0]*nums[1]*nums[2]).toFixed(4);
-}
+        // Set current month on first load
+        const now = new Date();
+        currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const mp = document.getElementById('monthPicker');
+        if (mp) mp.value = currentMonth;
 
-function qtyColor(q){
-  if(q < 0) return "#ff0000";
-  if(q >= 0 && q <= 10) return "#ffb3b3";
-  if(q >= 11 && q <= 199) return "#fff3b0";
-  if(q >= 200 && q <= 500) return "#c6f6d5";
-  return "#cfe8ff";
-}
+        // PT-only tools
+        const bf = document.getElementById('btnBackfillGeneral');
+        if (bf) bf.style.display = (userRole === 'pt') ? '' : 'none';
 
-function sortWarrantyLast(arr, keyFn){
-  const normal = [];
-  const tail = [];
-  for(const x of arr){
-    const k = (keyFn?keyFn(x):x);
-    if(WARRANTY_LAST.has(String(k).trim().toUpperCase())) tail.push(x);
-    else normal.push(x);
-  }
-  return normal.concat(tail);
-}
-
-function isPTEmail(email){ return !!email && email.toLowerCase().endsWith(".pt"); }
-function isPLEmail(email){ return !!email && email.toLowerCase().endsWith(".pl"); }
-
-const state = {
-  currentMonth: "",
-  warehouse: [], // {product, position, dimensions, weight, volume}
-  monthData: null, // {products: {product: {init}}, logs: []}
-  role: "none",
-  userEmail: ""
-};
-
-function blankMonth(){
-  return { products: {}, logs: [] };
-}
-
-/* =========================
-   Firebase storage wrappers
-========================= */
-async function fbGet(path){
-  const { db, doc, getDoc } = window.__fb;
-  const snap = await getDoc(doc(db, ...path));
-  return snap.exists() ? snap.data() : null;
-}
-async function fbSet(path, data, merge=true){
-  const { db, doc, setDoc } = window.__fb;
-  await setDoc(doc(db, ...path), data, { merge });
-}
-
-function getActor(){
-  const u = window.__fb?.auth?.currentUser;
-  return { by: u?.email || "", uid: u?.uid || "" };
-}
-
-/* =========================
-   Load / Save
-========================= */
-async function loadWarehouse(){
-  const data = await fbGet(["meta","warehouse"]);
-  state.warehouse = Array.isArray(data?.items) ? data.items : [];
-}
-
-async function saveWarehouse(){
-  await fbSet(["meta","warehouse"], { items: state.warehouse, updatedAt: window.__fb.serverTimestamp(), updatedBy: state.userEmail }, true);
-}
-
-async function loadMonth(monthId){
-  const data = await fbGet(["months", monthId]);
-  state.monthData = data ? { products: data.products||{}, logs: data.logs||[] } : blankMonth();
-}
-
-async function saveMonth(){
-  if(!state.currentMonth) return;
-  await fbSet(["months", state.currentMonth], {
-    products: state.monthData.products,
-    logs: state.monthData.logs,
-    updatedAt: window.__fb.serverTimestamp(),
-    updatedBy: state.userEmail
-  }, true);
-
-  // Publish general view for PL
-  if(state.role==="pt"){
-    await publishGeneralForMonth(state.currentMonth);
-  }
-}
-
-async function publishGeneralForMonth(monthId){
-  const generalItems = computeGeneralItemsForMonth(monthId);
-  await fbSet(["general", monthId], {
-    monthId,
-    items: generalItems,
-    updatedAt: window.__fb.serverTimestamp(),
-    updatedBy: state.userEmail
-  }, true);
-  document.getElementById("generalLastUpdate").textContent = "Last update: published";
-}
-
-async function backfillAllMonthsForPL(){
-  // list from month select options (24 months) AND also include any months stored? We can't list without queries,
-  // so we publish the months present in selector (good enough for your timeline).
-  const opts = Array.from(document.getElementById("monthSelect").options).map(o=>o.value);
-  for(const mid of opts){
-    await loadMonth(mid);
-    await publishGeneralForMonth(mid);
-  }
-  await loadMonth(state.currentMonth);
-  renderAll();
-}
-
-/* =========================
-   Calculations
-========================= */
-function getAllProducts(){
-  const list = state.warehouse.map(x=>x.product).filter(Boolean);
-  // Always include warranty if present
-  return sortWarrantyLast(Array.from(new Set(list)), x=>x);
-}
-
-function ensureProductEntry(prod){
-  if(!state.monthData.products[prod]) state.monthData.products[prod] = { init: 0 };
-  return state.monthData.products[prod];
-}
-
-function addLog(entry){
-  state.monthData.logs.push(entry);
-}
-
-function computeGeneralItemsForMonth(monthId){
-  // Uses state.monthData currently loaded for that month.
-  const products = getAllProducts();
-  const logs = state.monthData.logs || [];
-
-  // stock formula:
-  // realStock = init + received + returnsToStock + recovered - lost - b2b - sentOut? (we treat SENT as transit only, not reducing realStock here?) 
-  // In your earlier logic, SENT affects "Transit" and may subtract from "real"? We'll keep consistent with existing approach:
-  // We'll compute:
-  // receivedQty = adjustments.received + orders.received (+ maybe returnsToStock?) for dashboard
-  // sentQty = shipments.sent remaining open (for transit)
-  // afterConfirmation = realStock - amsped? (in your system amsped subtracts from both real and after-confirm; we keep as separate)
-  // For safety, we follow log semantics:
-  const initMap = {};
-  for(const p of products){
-    initMap[p] = Number(state.monthData.products[p]?.init || 0);
-  }
-
-  const deltaReal = Object.fromEntries(products.map(p=>[p,0]));
-  const deltaAfter = Object.fromEntries(products.map(p=>[p,0]));
-  const sentOpen = Object.fromEntries(products.map(p=>[p,0]));
-
-  let totalReceived=0;
-
-  // Apply logs
-  for(const l of logs){
-    const p = l.product;
-    if(!products.includes(p)) continue;
-    const q = Number(l.qty||0);
-    if(!Number.isFinite(q)) continue;
-
-    switch(l.tab){
-      case "adjustments":
-        if(l.type==="received"){ deltaReal[p]+=q; deltaAfter[p]+=q; totalReceived+=q; }
-        else if(l.type==="lost"){ deltaReal[p]-=q; deltaAfter[p]-=q; }
-        else { deltaReal[p]+=q; deltaAfter[p]+=q; }
-        break;
-      case "returns":
-        if(l.type==="returns" || l.type==="recovered"){ deltaReal[p]+=q; deltaAfter[p]+=q; }
-        // refund does not return to stock
-        break;
-      case "orders":
-        if(l.type==="received"){ deltaReal[p]+=q; deltaAfter[p]+=q; totalReceived+=q; }
-        if(l.type==="sent"){
-          // transit open: remaining qty stored on log if present
-          const rem = Number(l.remaining ?? q);
-          sentOpen[p]+=rem;
+        if (userRole === 'pl') {
+            // PL accounts: General-only, real-time from Firestore "general/{YYYY-MM}"
+            document.getElementById('initView').style.display = 'none';
+            document.getElementById('mainInterface').style.display = 'block';
+            startGeneralRealtime();
+            return;
         }
-        break;
-      case "amsped":
-        // after confirmation subtracts from after and real? You asked B2B subtracts from both real and after-confirm, amsped already did similarly.
-        deltaReal[p]-=q; deltaAfter[p]-=q;
-        break;
-      case "b2b":
-        deltaReal[p]-=q; deltaAfter[p]-=q;
-        break;
-      case "internal":
-        // no stock impact
-        break;
-      default:
-        break;
-    }
-  }
 
-  // Sort products by realStock asc, warranty last
-  const items = products.map(p=>{
-    const real = initMap[p] + (deltaReal[p]||0);
-    const after = initMap[p] + (deltaAfter[p]||0);
-    const sent = sentOpen[p]||0;
-    return { product:p, realStock:real, afterConfirmation:after, sent:sent };
-  });
+        // Load warehouse master first (drives product list)
+        await loadWarehouseFromFirestore();
+        renderWarehouse();
+        syncProductsFromWarehouse(); // keeps productList aligned with warehouse
 
-  items.sort((a,b)=>a.realStock-b.realStock);
-  const withWarrantyLast = sortWarrantyLast(items, x=>x.product.toUpperCase());
-  return withWarrantyLast;
-}
+        // Load selected month data
+        await loadMonthData();
+        await loadOpenSentLogsFromPreviousMonths();
 
-/* =========================
-   Rendering
-========================= */
-function fillProductList(){
-  const dl=document.getElementById("productList");
-  dl.innerHTML="";
-  for(const p of getAllProducts()){
-    const opt=document.createElement("option");
-    opt.value=p;
-    dl.appendChild(opt);
-  }
-}
-
-function renderWarehouse(){
-  const tbody=document.getElementById("warehouseTableBody");
-  tbody.innerHTML="";
-  for(let i=0;i<state.warehouse.length;i++){
-    const w=state.warehouse[i];
-    const tr=document.createElement("tr");
-
-    const tdP=document.createElement("td");
-    tdP.textContent=w.product||"";
-    tr.appendChild(tdP);
-
-    const tdPos=document.createElement("td");
-    const ipPos=document.createElement("input");
-    ipPos.value=w.position||"";
-    ipPos.oninput=()=>{ w.position=ipPos.value; saveWarehouse().catch(console.error); };
-    tdPos.appendChild(ipPos);
-    tr.appendChild(tdPos);
-
-    const tdDim=document.createElement("td");
-    const ipDim=document.createElement("input");
-    ipDim.value=w.dimensions||"";
-    ipDim.oninput=()=>{
-      w.dimensions=ipDim.value;
-      w.volume=dimToVolume(w.dimensions);
-      tdVol.textContent=w.volume;
-      saveWarehouse().catch(console.error);
+        // Publish initial General view for this month (so .pl can see it)
+        queueSaveGeneralView(true);
     };
-    tdDim.appendChild(ipDim);
-    tr.appendChild(tdDim);
 
-    const tdW=document.createElement("td");
-    const ipW=document.createElement("input");
-    ipW.type="text";
-    ipW.value=w.weight||"";
-    ipW.oninput=()=>{ w.weight=ipW.value; saveWarehouse().catch(console.error); };
-    tdW.appendChild(ipW);
-    tr.appendChild(tdW);
 
-    var tdVol=document.createElement("td");
-    tdVol.textContent=(w.volume ?? dimToVolume(w.dimensions)) || 0;
-    tr.appendChild(tdVol);
-
-    tbody.appendChild(tr);
-  }
-}
-
-function renderInit(){
-  const tbody=document.getElementById("initTableBody");
-  tbody.innerHTML="";
-  const items = Object.entries(state.monthData.products).map(([p,v])=>({product:p, init:Number(v.init||0)}));
-  items.sort((a,b)=>a.product.localeCompare(b.product));
-  const sorted = sortWarrantyLast(items, x=>x.product.toUpperCase());
-  for(const it of sorted){
-    const tr=document.createElement("tr");
-    tr.innerHTML=`<td>${it.product}</td><td>${it.init}</td>`;
-    tbody.appendChild(tr);
-  }
-}
-
-function renderGeneral(){
-  const tbody=document.getElementById("generalTableBody");
-  tbody.innerHTML="";
-
-  const search=(document.getElementById("generalSearch").value||"").toLowerCase();
-  const items = (state.role==="pl" ? (state.plGeneralItems||[]) : computeGeneralItemsForMonth(state.currentMonth));
-
-  // dashboard totals
-  let totalReceived=0;
-  let totalTransit=0;
-  // totalReceived: count received logs in month data
-  if(state.role!=="pl"){
-    for(const l of (state.monthData.logs||[])){
-      if(l.tab==="orders" && l.type==="received") totalReceived+=Number(l.qty||0);
-      if(l.tab==="adjustments" && l.type==="received") totalReceived+=Number(l.qty||0);
-    }
-    const tmp = computeGeneralItemsForMonth(state.currentMonth);
-    totalTransit = tmp.reduce((s,x)=>s+Number(x.sent||0),0);
-  }else{
-    totalTransit = items.reduce((s,x)=>s+Number(x.sent||0),0);
-    // Received total is not in snapshot; leave 0 for PL dashboard (or compute from items? not possible). Keep 0.
-  }
-
-  document.getElementById("totalReceived").textContent = String(Math.round(totalReceived));
-  document.getElementById("totalTransit").textContent = String(Math.round(totalTransit));
-
-  // search + warranty last + already sorted by realStock in snapshot
-  const filtered = items.filter(it=>it.product.toLowerCase().includes(search));
-  for(const it of filtered){
-    const tr=document.createElement("tr");
-
-    const tdP=document.createElement("td");
-    tdP.textContent=it.product;
-    tr.appendChild(tdP);
-
-    function qtyCell(q, withBar=true){
-      const wrap=document.createElement("div");
-      wrap.className="qty-cell";
-      const num=document.createElement("div");
-      num.className="qty-number";
-      num.textContent = String(q);
-      wrap.appendChild(num);
-      if(withBar){
-        const bar=document.createElement("div");
-        bar.className="qty-bar";
-        bar.style.background = qtyColor(Number(q));
-        wrap.appendChild(bar);
-      }
-      return wrap;
+    // --- Helpers: case-insensitive matching + bulk line parsing (supports product names with spaces) ---
+    function normKey(v) { return (v || '').toString().trim().toLowerCase(); }
+    function findProd(input) { const k = normKey(input); return products.find(p => normKey(p.sku) === k); }
+    function parseBulkLine(line) {
+        const parts = (line || '').toString().trim().split(/\s+/);
+        if (parts.length < 2) return null;
+        const qty = parseInt(parts[parts.length - 1]);
+        const sku = parts.slice(0, -1).join(' ').trim();
+        if (!sku || isNaN(qty)) return null;
+        return { sku, qty };
     }
 
-    const tdReal=document.createElement("td");
-    tdReal.appendChild(qtyCell(it.realStock, true));
-    tr.appendChild(tdReal);
-
-    const tdAfter=document.createElement("td");
-    tdAfter.appendChild(qtyCell(it.afterConfirmation, true));
-    tr.appendChild(tdAfter);
-
-    const tdSent=document.createElement("td");
-    tdSent.textContent = String(it.sent||0); // no colors on sent
-    tr.appendChild(tdSent);
-
-    tbody.appendChild(tr);
-  }
-}
-
-function renderLogs(tbodyId, tabName){
-  const tbody=document.getElementById(tbodyId);
-  tbody.innerHTML="";
-  const logs = (state.monthData.logs||[]).filter(l=>l.tab===tabName);
-  logs.sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-  for(let idx=0; idx<logs.length; idx++){
-    const l=logs[idx];
-    const tr=document.createElement("tr");
-    const by=l.by||"";
-    const note = l.note||"";
-    if(tabName==="amsped" || tabName==="b2b"){
-      tr.innerHTML=`<td>${l.date||""}</td><td>${l.product}</td><td>${l.qty}</td><td>${by}</td>
-        <td><button class="btn btn-light" data-del="${idx}">Del</button></td>`;
-    }else if(tabName==="orders"){
-      tr.innerHTML=`<td>${l.date||""}</td><td>${l.type||""}</td><td>${l.product}</td><td>${l.qty}</td><td>${note}</td><td>${by}</td>`;
-    }else{
-      tr.innerHTML=`<td>${l.date||""}</td><td>${l.type||""}</td><td>${l.product}</td><td>${l.qty}</td><td>${by}</td>
-        <td><button class="btn btn-light" data-del="${idx}">Del</button></td>`;
+    // --- Auth / Actor helper (used in logs/movements + exports) ---
+    function currentActorEmail() {
+        try { return window.fb?.auth?.currentUser?.email || ''; } catch(e) { return ''; }
     }
-    tbody.appendChild(tr);
-  }
+    function currentActorUid() {
+        try { return window.fb?.auth?.currentUser?.uid || ''; } catch(e) { return ''; }
+    }
 
-  // delete handlers
-  tbody.querySelectorAll("button[data-del]").forEach(btn=>{
-    btn.onclick=async ()=>{
-      const i = Number(btn.getAttribute("data-del"));
-      const all = state.monthData.logs.filter(l=>l.tab===tabName);
-      const target = all[i];
-      // remove by identity match
-      const pos = state.monthData.logs.indexOf(target);
-      if(pos>=0){
-        state.monthData.logs.splice(pos,1);
-        await saveMonth();
+
+    // --- CSV / Export helpers (Excel-friendly ';' delimiter) ---
+    const CSV_DELIM = ';';
+    function escapeCSV(v) {
+        const s = (v ?? '').toString();
+        if (s.includes('"')) return '"' + s.replace(/"/g, '""') + '"';
+        if (s.includes('\n') || s.includes('\r') || s.includes(CSV_DELIM) || s.includes(',')) return '"' + s + '"';
+        return s;
+    }
+    function downloadCSV(headers, rows, filename) {
+        const lines = [];
+        lines.push(`sep=${CSV_DELIM}`);
+        lines.push(headers.map(escapeCSV).join(CSV_DELIM));
+        rows.forEach(r => lines.push(headers.map(h => escapeCSV(r[h])).join(CSV_DELIM)));
+        const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+
+
+    // ---- Master Product List (Warehouse upload) ----
+    function masterSkuLines() {
+        return (warehouseItems || [])
+            .map(r => (r?.produto ?? '').toString().trim())
+            .filter(Boolean);
+    }
+
+    function parseSkuLine(line) {
+        // Warehouse master list now provides ONLY the product name (coluna A: Produto).
+        // We keep the internal field name `sku` for compatibility across tabs, but it equals the product string.
+        const produto = (line || '').toString().trim();
+        return { sku: produto, name: produto };
+    }
+
+    function buildBaseProducts() {
+        return masterSkuLines().map(line => {
+            const { sku, name } = parseSkuLine(line);
+            return { sku, name, initial: 0, movements: [], toConfirm: 0 };
+        });
+    }
+
+    function reconcileWithMaster(storedProducts) {
+        const map = new Map();
+        (storedProducts || []).forEach(p => { if (p && p.sku) map.set(p.sku, p); });
+
+        const base = buildBaseProducts();
+        base.forEach(p => {
+            const old = map.get(p.sku);
+            if (old) {
+                p.initial = Number(old.initial) || 0;
+                p.movements = old.movements || [];
+                p.toConfirm = old.toConfirm || 0;
+            }
+        });
+        return base;
+    }
+
+    function syncProductsFromWarehouse() {
+        // If a month is already loaded, rebuild its products from the warehouse master list
+        if (currentMonth && allData[currentMonth]) {
+            products = reconcileWithMaster(allData[currentMonth].products || []);
+            allData[currentMonth].products = products;
+            save();
+            renderAll();
+        } else {
+            // No month loaded yet; just keep datalist consistent
+            products = reconcileWithMaster(products || []);
+            updateDatalist();
+        }
+    }
+
+    window.onload = () => {
+        // Firebase Auth will call startAppAfterAuth() after login
+        const warn = document.getElementById('fileProtoWarn');
+        if (warn) warn.style.display = (location.protocol === 'file:') ? '' : 'none';
+    };
+
+    async function changeMonth() {
+        currentMonth = document.getElementById('monthPicker').value;
+        if (userRole === 'pl') {
+            startGeneralRealtime();
+        } else {
+            await loadMonthData();
+            // publish General AFTER month data is loaded, so PL sees the right values
+            queueSaveGeneralView(true);
+        }
+    }
+
+    async function loadMonthData() {
+        if (!currentMonth) return;
+        if (userRole === 'pl') { startGeneralRealtime(); return; }
+
+        // Fetch from Firestore
+        let data = null;
+        try {
+            if (window.fb) data = await window.fb.getDocData(['months', currentMonth]);
+        } catch(e) {
+            console.error('Load month failed', e);
+        }
+
+        if (data) {
+            products = reconcileWithMaster(data.products || []);
+            logs = data.logs || [];
+            products.forEach(p => { if(p.toConfirm === undefined) p.toConfirm = 0; });
+            document.getElementById('initView').style.display = 'none';
+            document.getElementById('mainInterface').style.display = 'block';
+            allData[currentMonth] = { products, logs };
+            await loadOpenSentLogsFromPreviousMonths();
+            renderAll();
+            queueSaveGeneralView(true);
+        } else {
+            document.getElementById('mainInterface').style.display = 'none';
+            document.getElementById('initView').style.display = 'flex';
+        }
+    }
+
+    function monthMinus(monthStr, n) {
+        // monthStr: YYYY-MM
+        const [y, m] = monthStr.split('-').map(x => parseInt(x,10));
+        let yy = y, mm = m - n;
+        while (mm <= 0) { yy -= 1; mm += 12; }
+        return `${yy}-${String(mm).padStart(2,'0')}`;
+    }
+
+    async function findPreviousMonthData() {
+        // Look back up to 24 months for previous initialized month
+        for (let i=1; i<=24; i++){
+            const key = monthMinus(currentMonth, i);
+            try{
+                const d = await window.fb.getDocData(['months', key]);
+                if (d) return { key, data: d };
+            } catch(e){}
+        }
+        return null;
+    }
+
+    // ---- Cross-month: load open SENT logs from previous months (still not received) ----
+    async function loadOpenSentLogsFromPreviousMonths() {
+        openSentLogs = [];
+        if (!window.fb || !currentMonth) return;
+        if (userRole === 'pl') return; // PL doesn't need this; it uses general/{month} snapshot
+
+        // Look back up to 6 months to find outstanding SENT shipments
+        for (let i = 1; i <= 24; i++) {
+            const mKey = monthMinus(currentMonth, i);
+            try {
+                const d = await window.fb.getDocData(['months', mKey]);
+                if (!d || !Array.isArray(d.logs)) continue;
+                d.logs.forEach(l => {
+                    if (!l) return;
+                    if (l.status !== 'SENT') return;
+                    // If received in or before the month we're viewing, it's no longer in transit for this month.
+                    if (l.receivedInMonth && String(l.receivedInMonth).localeCompare(String(currentMonth)) <= 0) return;
+                    openSentLogs.push({
+                        fromMonth: mKey,
+                        id: l.id,
+                        date: l.date,
+                        sku: l.sku,
+                        qty: Number(l.qty) || 0,
+                        note: l.note || '',
+                        by: l.by || '',
+                        uid: l.uid || ''
+                    });
+                });
+            } catch(e) {
+                console.warn('Failed to load previous month logs', mKey, e);
+            }
+        }
+
+        // Sort: newest first
+        openSentLogs.sort((a,b) => (b.date||'').localeCompare(a.date||'') || (a.sku||'').localeCompare(b.sku||''));
+    }
+
+    async function markSourceSentAsReceived(fromMonth, sourceId, receivedInMonth, arrivalDate, receivedQty) {
+        if (!window.fb) return;
+        try {
+            const d = await window.fb.getDocData(['months', fromMonth]);
+            if (!d || !Array.isArray(d.logs)) return;
+            const logsArr = d.logs;
+            const idx = logsArr.findIndex(x => x && x.id === sourceId);
+            if (idx < 0) return;
+
+            // Keep status as SENT for historical month snapshot, but mark it as already received elsewhere
+            logsArr[idx].receivedInMonth = receivedInMonth;
+            logsArr[idx].receivedAt = arrivalDate;
+            logsArr[idx].receivedQty = receivedQty;
+            logsArr[idx].receivedBy = currentActorEmail();
+            logsArr[idx].receivedUid = currentActorUid();
+
+            await window.fb.setDocData(['months', fromMonth], { logs: logsArr, updatedAt: new Date().toISOString() });
+        } catch(e) {
+            console.error('Failed to mark source SENT as received', e);
+        }
+    }
+
+
+    // If a previous-month SENT is only partially received, keep it open by reducing its qty.
+    // This preserves the ability to receive the remaining quantity later.
+    async function updateSourceSentRemaining(fromMonth, sourceId, remainingQty, receivedInMonth, arrivalDate, receivedQty) {
+        if (!window.fb) return;
+        try {
+            const d = await window.fb.getDocData(['months', fromMonth]);
+            if (!d || !Array.isArray(d.logs)) return;
+            const logsArr = d.logs;
+            const idx = logsArr.findIndex(x => x && x.id === sourceId);
+            if (idx < 0) return;
+
+            const src = logsArr[idx];
+            src.qty = remainingQty;
+
+            src.partialReceipts = Array.isArray(src.partialReceipts) ? src.partialReceipts : [];
+            src.partialReceipts.push({
+                receivedInMonth,
+                receivedAt: arrivalDate,
+                receivedQty,
+                by: currentActorEmail(),
+                uid: currentActorUid()
+            });
+            src.lastPartialAt = arrivalDate;
+
+            // Make sure it stays open (do NOT set receivedInMonth)
+            delete src.receivedInMonth;
+
+            await window.fb.setDocData(['months', fromMonth], { logs: logsArr, updatedAt: new Date().toISOString() });
+        } catch(e) {
+            console.error('Failed to update source SENT remaining qty', e);
+        }
+    }
+
+    async function initializeMonth(carryOver) {
+        if (!window.fb) return alert('Firebase not ready.');
+        if (userRole === 'pl') return alert('A tua conta (.pl) é apenas leitura.');
+
+        let newProds = buildBaseProducts();
+        if (carryOver) {
+            const prev = await findPreviousMonthData();
+            if (prev && prev.data) {
+                const prevProducts = reconcileWithMaster(prev.data.products || []);
+                const prevLogs = prev.data.logs || [];
+                newProds.forEach(p => {
+                    const old = prevProducts.find(op => op.sku === p.sku);
+                    if (old) p.initial = calculateStock(old, 'real', prevLogs);
+                    p.toConfirm = 0;
+                });
+            }
+        }
+
+        products = newProds;
+        logs = [];
+
+        allData[currentMonth] = { products, logs };
+
+        await window.fb.setDocData(['months', currentMonth], {
+            products,
+            logs,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+                updatedBy: currentActorEmail(),
+                updatedUid: currentActorUid(),
+                updatedBy: currentActorEmail(),
+                updatedUid: currentActorUid()
+        });
+
+        await loadMonthData();
+    }
+
+
+    function calculateStock(p, type, currentLogs) {
+        const added = sum(p,'adjust') + sum(p,'returns') + sum(p,'refunds') + sum(p,'recovered') + sum(p, 'RECEIVED');
+        const internal = sum(p,'customerCare') + sum(p,'awards') + sum(p,'officeNeeds');
+        if(type === 'real') return p.initial + added - internal - sum(p,'picking') - sum(p,'b2b');
+        return p.initial + added - internal - sum(p,'amsped') - sum(p,'b2b');
+    }
+
+    function sum(prod, type) { return prod.movements.filter(m => m.type === type).reduce((acc, curr) => acc + curr.qty, 0); }
+    function save() {
+        // Firestore save (debounced)
+        allData[currentMonth] = { products, logs };
+        queueSaveMonth();
+        // publish General view fast so PL sees near-instant updates
+        queueSaveGeneralView(true);
+    }
+
+    function queueSaveMonth() {
+        if (!window.fb || !currentMonth) return;
+        if (userRole === 'pl') return; // PL is read-only
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(flushSaveMonth, 600);
+    }
+
+
+    function buildGeneralViewItems() {
+        // Returns list: { sku, real, amsped, transit }
+        return (products || []).map(p => {
+            const real = calculateStock(p, 'real', logs);
+            const amsped = calculateStock(p, 'amsped', logs);
+            const transitCurrent = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT' && (!l.receivedInMonth || String(l.receivedInMonth).localeCompare(String(currentMonth)) > 0))
+                                .reduce((a,c)=>a + (Number(c.qty)||0), 0);
+            const transitPrev = (openSentLogs || []).filter(l => normKey(l.sku) === normKey(p.sku))
+                                .reduce((a,c)=>a + (Number(c.qty)||0), 0);
+            const transit = transitCurrent + transitPrev;
+            return { sku: p.sku, real: Number(real)||0, amsped: Number(amsped)||0, transit: Number(transit)||0 };
+        }).sort((a,b) => (a.real - b.real) || a.sku.localeCompare(b.sku, undefined, {numeric:true}));
+    }
+
+    function queueSaveGeneralView(immediate=false) {
+        if (!window.fb || !currentMonth) return;
+        if (userRole === 'pl') return; // PL can't write
+        if (generalSaveTimer) clearTimeout(generalSaveTimer);
+        const delay = immediate ? 0 : 150;
+        generalSaveTimer = setTimeout(flushSaveGeneralView, delay);
+    }
+
+    async function flushSaveGeneralView() {
+        try {
+            if (!window.fb || !currentMonth) return;
+            if (userRole === 'pl') return;
+            const items = buildGeneralViewItems();
+            await window.fb.setDocData(['general', currentMonth], {
+                items,
+                updatedAt: new Date().toISOString()
+            });
+        } catch (e) {
+            console.error('Firestore general view save failed', e);
+        }
+
+    // PT helper: publish General snapshots for ALL saved months so .pl can view historical months too
+    async function backfillGeneralViews() {
+        try {
+            if (!window.fb || userRole === 'pl') return;
+            const btn = document.getElementById('btnBackfillGeneral');
+            if (btn) { btn.disabled = true; btn.textContent = '⏳ A publicar...'; }
+
+            const monthIds = await window.fb.listDocIds('months');
+            // sort YYYY-MM
+            monthIds.sort((a,b) => String(a).localeCompare(String(b)));
+
+                        // Prefetch all months (products + logs) once
+            const monthDataMap = {};
+            for (const mid of monthIds) {
+                try {
+                    const d = await window.fb.getDocData(['months', mid]);
+                    if (d) monthDataMap[mid] = d;
+                } catch(e) {
+                    console.warn('Backfill prefetch failed for', mid, e);
+                }
+            }
+
+            // Helper: is a SENT log still "in transit" as of the end of targetMonth?
+            function sentIsOpenAsOf(log, targetMonth) {
+                if (!log || log.status !== 'SENT') return false;
+                if (!log.receivedInMonth) return true; // not received yet
+                // If received in a later month, it was still in transit for targetMonth
+                return String(log.receivedInMonth).localeCompare(String(targetMonth)) > 0;
+            }
+
+            for (const mid of monthIds) {
+                const data = monthDataMap[mid];
+                if (!data) continue;
+
+                const monthProducts = reconcileWithMaster(data.products || []);
+                const monthLogs = data.logs || [];
+
+                // Compute transit for this month INCLUDING open SENT from previous months
+                // Transit for mid = sum of all SENT shipments with fromMonth <= mid that are still open as-of mid
+                const transitBySku = {};
+                for (const fromMonth of monthIds) {
+                    if (String(fromMonth).localeCompare(String(mid)) > 0) break; // only months up to mid
+                    const d2 = monthDataMap[fromMonth];
+                    if (!d2 || !Array.isArray(d2.logs)) continue;
+                    d2.logs.forEach(l => {
+                        if (!sentIsOpenAsOf(l, mid)) return;
+                        const k = normKey(l.sku);
+                        transitBySku[k] = (transitBySku[k] || 0) + (Number(l.qty) || 0);
+                    });
+                }
+
+                const items = (monthProducts || []).map(p => {
+                    const real = (p.initial || 0)
+                        + (p.movements||[]).filter(m => ['adjust','returns','refunds','recovered','RECEIVED'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0)
+                        - (p.movements||[]).filter(m => ['customerCare','awards','officeNeeds'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0)
+                        - (p.movements||[]).filter(m => ['picking','b2b'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0);
+
+                    const amsped = (p.initial || 0)
+                        + (p.movements||[]).filter(m => ['adjust','returns','refunds','recovered','RECEIVED'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0)
+                        - (p.movements||[]).filter(m => ['customerCare','awards','officeNeeds'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0)
+                        - (p.movements||[]).filter(m => ['amsped','b2b'].includes(m.type)).reduce((a,c)=>a+(Number(c.qty)||0),0);
+
+                    const transit = transitBySku[normKey(p.sku)] || 0;
+
+                    return { sku: p.sku, real: Number(real)||0, amsped: Number(amsped)||0, transit: Number(transit)||0 };
+                }).sort((a,b) => (a.real - b.real) || String(a.sku).localeCompare(String(b.sku), undefined, {numeric:true}));
+
+                await window.fb.setDocData(['general', mid], {
+                    items,
+                    updatedAt: new Date().toISOString(),
+                    backfilledAt: new Date().toISOString(),
+                    backfilledBy: currentActorEmail()
+                });
+            }
+
+            alert('Publicação concluída: .pl já consegue ver todos os meses gravados.');
+        } catch (e) {
+            console.error(e);
+            alert('Erro ao publicar meses para .pl: ' + (e?.message || e));
+        } finally {
+            const btn = document.getElementById('btnBackfillGeneral');
+            if (btn) { btn.disabled = false; btn.textContent = '📣 Publicar meses p/ PL'; }
+        }
+    }
+    }
+
+    function startGeneralRealtime() {
+        if (!window.fb || !currentMonth) return;
+        // subscribe (and replace previous)
+        if (generalUnsub) { try { generalUnsub(); } catch(e){} }
+        generalUnsub = window.fb.subscribeDocData(['general', currentMonth], (data) => {
+            generalViewItems = (data && Array.isArray(data.items)) ? data.items : [];
+            const upd = (data && data.updatedAt) ? data.updatedAt : null;
+            const el = document.getElementById('generalUpdatedAt');
+            if (el) el.textContent = upd ? ('Last update: ' + new Date(upd).toLocaleString()) : 'Last update: —';
+            // ensure main UI visible for PL
+            const init = document.getElementById('initView');
+            const main = document.getElementById('mainInterface');
+            if (init) init.style.display = 'none';
+            if (main) main.style.display = 'block';
+            renderGeneral();
+        });
+    }
+
+    function reconnectGeneral(){
+        // Forces re-subscribe (useful if rules/domain were updated)
+        startGeneralRealtime();
+    }
+
+    async function flushSaveMonth() {
+        try {
+            if (!window.fb || !currentMonth) return;
+            if (userRole === 'pl') return;
+            const payload = {
+                products: products || [],
+                logs: logs || [],
+                updatedAt: new Date().toISOString()
+            };
+            await window.fb.setDocData(['months', currentMonth], payload);
+            // also publish General view immediately for PL realtime
+            await flushSaveGeneralView();
+            lastSavedAt = Date.now();
+            // Keep the public General view in sync for .pl accounts
+            queueSaveGeneralView(true);
+        } catch (e) {
+            console.error('Firestore save failed', e);
+        }
+    }
+
+
+    function renderAll() {
+        setDates(); updateDatalist(); renderGeneral(); renderOrderInventory(); renderShipments(); renderManagement(); renderMiniDash(); renderRecentLogs(); renderWarehouse(); renderMovements();
+    }
+
+    function updateDatalist() {
+        const dl = document.getElementById('productList'); dl.innerHTML = '';
+        products.forEach(p => dl.innerHTML += `<option value="${p.sku}">${p.sku}</option>`);
+    }
+
+    function qtyClass(v) {
+        if (v === null || v === undefined || v === '' || v === '-') return '';
+        const n = Number(v);
+        if (Number.isNaN(n)) return '';
+        if (n < 0) return 'qty-neg';
+        if (n <= 10) return 'qty-low';
+        if (n <= 199) return 'qty-mid';
+        if (n <= 500) return 'qty-good';
+        return 'qty-high'; // 501+
+    }
+
+    function qtyCell(v) {
+        if (v === null || v === undefined) v = 0;
+        if (v === '-') return `<div class="qty-wrap"><div class="qty-num">-</div><div class="qty-bar"></div></div>`;
+        const cls = qtyClass(v);
+        return `<div class="qty-wrap"><div class="qty-num">${v}</div><div class="qty-bar ${cls}"></div></div>`;
+    }
+
+    function renderGeneral() {
+        const bodyG = document.getElementById('bodyGeneral'); bodyG.innerHTML = '';
+
+        // Data source:
+        // - PT: compute from products/logs
+        // - PL: read-only realtime snapshot from Firestore general/{YYYY-MM}
+        let rows = [];
+        if (userRole === 'pl') {
+            rows = (generalViewItems || []).map(it => ({
+                sku: it.sku,
+                real: Number(it.real) || 0,
+                amsped: Number(it.amsped) || 0,
+                transit: Number(it.transit) || 0
+            })).sort((a,b) => (a.real - b.real) || String(a.sku).localeCompare(String(b.sku), undefined, {numeric:true}));
+        } else {
+            rows = buildGeneralViewItems();
+        }
+        if (userRole === 'pl' && rows.length === 0) {
+            const err = window.fb?.lastError;
+            const msg = err ? ('Sem acesso a dados (regras Firestore). Erro: ' + (err.message || err)) :
+                              'Ainda não existe snapshot do General para este mês. Um utilizador .pt precisa abrir/guardar este mês uma vez para publicar.';
+            bodyG.innerHTML = `<tr><td colspan="4" style="padding:14px; background:#fff3cd; border:1px solid #ffeeba; border-radius:10px;">
+                ${msg}
+            </td></tr>`;
+            return;
+        }
+
+
+        rows.forEach(({sku, real, amsped, transit}) => {
+            bodyG.innerHTML += `<tr>
+                <td><b>${sku}</b></td>
+                <td class="stock-val real-col">${qtyCell(real)}</td>
+                <td class="stock-val amsped-col">${qtyCell(amsped)}</td>
+                <td class="transit-val">${(transit||0)}</td>
+            </tr>`;
+        });
+    }
+
+
+    // v44: PRIORITY SORTING LOGIC
+    function renderOrderInventory() {
+        const body = document.getElementById('bodyOrderInventory'); body.innerHTML = '';
+        
+        // Calculate priority for each item
+        let prioritized = products.map(p => {
+            const real = calculateStock(p, 'real', logs);
+            const amsped = calculateStock(p, 'amsped', logs);
+            const sent = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT').reduce((a,c)=>a+c.qty,0);
+            const ord = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'ORDER').reduce((a,c)=>a+c.qty,0);
+            const toConf = p.toConfirm || 0;
+            
+            // Priority Rule: (Stock Real + Stock Sent) - To Confirm
+            const coverage = (real + sent) - toConf;
+            const isUrgent = coverage < 0;
+            
+            return { p, real, amsped, sent, ord, toConf, coverage, isUrgent };
+        });
+
+        // Sorting: 
+        // 1. Urgent items first (most negative coverage first)
+        // 2. Others by lowest real stock
+        prioritized.sort((a, b) => {
+            if (a.isUrgent && !b.isUrgent) return -1;
+            if (!a.isUrgent && b.isUrgent) return 1;
+            if (a.isUrgent && b.isUrgent) return a.coverage - b.coverage;
+            return a.real - b.real;
+        });
+
+        prioritized.forEach(item => {
+            const rowClass = item.isUrgent ? 'urgent-row' : '';
+            body.innerHTML += `<tr class="${rowClass}">
+                <td><b>${item.p.sku}</b></td>
+                <td class="real-col stock-val">${item.real}</td>
+                <td class="amsped-col stock-val">${item.amsped}</td>
+                <td class="transit-val">${item.sent || '-'}</td>
+                <td class="confirm-col">${item.toConf || '-'}</td>
+                <td class="order-col">${item.ord || '-'}</td>
+            </tr>`;
+        });
+    }
+
+    function updateToConfirm(mode) {
+        if(mode === 'single') {
+            const s = document.getElementById('confSku').value.trim();
+            const q = parseInt(document.getElementById('confQty').value);
+            const p = findProd(s);
+            if(p && !isNaN(q)) { p.toConfirm = q; }
+            document.getElementById('confSku').value = ""; document.getElementById('confQty').value = "";
+        } else {
+            const text = document.getElementById('inputToConfirm').value.trim();
+            text.split('\n').forEach(line => {
+                const parts = line.trim().split(/\s+/);
+                if(parts.length < 2) return;
+                const sku = parts.slice(0, -1).join(' ').trim();
+                const qty = parseInt(parts[parts.length-1]);
+                const p = findProd(sku);
+                if(p && !isNaN(qty)) p.toConfirm = qty;
+            });
+            document.getElementById('inputToConfirm').value = "";
+        }
+        save(); renderAll();
+    }
+
+    function clearToConfirm() { if(confirm("Clear ALL 'TO CONFIRM' values?")) { products.forEach(p => p.toConfirm = 0); save(); renderAll(); } }
+
+    function renderShipments() {
+        const body = document.getElementById('bodyShipments');
+        if (!body) return;
+        body.innerHTML = '';
+
+        // Combine current month logs + open SENT from previous months
+        const combined = [];
+
+        (logs || []).forEach((l, i) => {
+            combined.push({ ...l, __source: 'current', __idx: i, __fromMonth: currentMonth });
+        });
+
+        (openSentLogs || []).forEach((l) => {
+            combined.push({
+                date: l.date,
+                sku: l.sku,
+                qty: l.qty,
+                status: 'SENT',
+                id: l.id,
+                note: l.note || '',
+                by: l.by || '',
+                uid: l.uid || '',
+                __source: 'prev',
+                __idx: null,
+                __fromMonth: l.fromMonth
+            });
+        });
+
+        // Sort by date desc then product
+        combined.sort((a,b) => (b.date||'').localeCompare(a.date||'') || (a.sku||'').localeCompare(b.sku||''));
+
+        combined.forEach((l) => {
+            const isPrev = l.__source === 'prev';
+            const statusLabel = isPrev ? 'SENT (prev)' : l.status;
+            const badgeClass = (l.status || '').toLowerCase();
+
+            let acts = '';
+            if (l.status === 'SENT') {
+                if (isPrev) {
+                    acts += `<button class="btn btn-success" onclick="receivePrevSent('${l.__fromMonth}', ${l.id})">Receive</button> `;
+                } else {
+                    acts += `<button class="btn btn-success" onclick="receiveLog(${l.__idx})">Receive</button> `;
+                }
+            }
+
+            if (!isPrev) {
+                acts += `<button class="btn btn-edit" onclick="editLog(${l.__idx})">Edit</button> ` +
+                        `<button class="btn btn-danger" onclick="deleteLog(${l.__idx})">X</button>`;
+            } else {
+                acts += `<span style="font-size:12px; color:#666;">(sent em ${l.__fromMonth})</span>`;
+            }
+
+            body.innerHTML += `<tr>
+                <td>${l.date}</td>
+                <td>${l.sku}</td>
+                <td><span class="badge bg-${badgeClass}">${statusLabel}</span></td>
+                <td>${l.qty}</td>
+                <td>${l.arrivalDate || '-'}</td>
+                <td>${(l.note||'-')}</td>
+                <td>${acts}</td>
+            </tr>`;
+        });
+    }
+
+    async function receivePrevSent(fromMonth, sourceId) {
+        // Receive a SENT that was created in a previous month:
+        // - Keep the original log as SENT (historical),
+        // - Create RECEIVED in the CURRENT month (so inventory increases in the month received),
+        // - Mark the original as receivedInMonth to avoid showing it again as "open".
+        const src = (openSentLogs || []).find(x => x.fromMonth === fromMonth && x.id === sourceId);
+        if (!src) return alert('Shipment not found (maybe already received).');
+
+        const qty = parseInt(prompt("Confirmed Qty Received:", src.qty));
+        const date = prompt("Arrival Date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
+        if (isNaN(qty) || !date) return;
+
+        // Create a RECEIVED movement in the CURRENT month
+        const p = findProd(src.sku);
+        if (p) {
+            p.movements.push({ type: 'RECEIVED', qty, date, logId: sourceId, by: currentActorEmail(), uid: currentActorUid() });
+        } else {
+            alert('Produto não encontrado no mês atual. Confirma se existe no Warehouse master.');
+            return;
+        }
+
+        // Add a RECEIVED log in current month for tracking/exports
+        logs.push({
+            date,
+            sku: src.sku,
+            qty: qty,
+            status: 'RECEIVED',
+            id: Date.now(),
+            arrivalDate: date,
+            receivedQty: qty,
+            sourceMonth: fromMonth,
+            sourceId: sourceId,
+            note: src.note || '',
+            by: currentActorEmail(),
+            uid: currentActorUid()
+        });
+
+        // Update previous month SENT:
+        // - If fully received, mark it as receivedInMonth (so it closes)
+        // - If partially received, reduce its qty and keep it open (remaining stays SENT)
+        if (qty < parseInt(src.qty)) {
+            const remaining = parseInt(src.qty) - qty;
+            await updateSourceSentRemaining(fromMonth, sourceId, remaining, currentMonth, date, qty);
+        } else {
+            await markSourceSentAsReceived(fromMonth, sourceId, currentMonth, date, qty);
+        }
+
+        // Refresh open list + save
+        await loadOpenSentLogsFromPreviousMonths();
+        save();
         renderAll();
-      }
-    };
-  });
-}
+    }
 
-function renderOrdersOpenShipments(){
-  const tbody=document.getElementById("openShipmentsBody");
-  tbody.innerHTML="";
 
-  // gather open sent from current month only (v65 baseline)
-  const logs = state.monthData.logs.filter(l=>l.tab==="orders" && l.type==="sent");
-  const open = logs.filter(l=>Number(l.remaining ?? l.qty) > 0);
+    function addOrderLog(status) {
+        const prefix = status === 'ORDER' ? 'ord' : 'ship';
+        const date = document.getElementById(prefix + 'Date').value;
+        const sku = document.getElementById(prefix + 'Sku').value.trim();
+        const qty = parseInt(document.getElementById(prefix + 'Qty').value);
+        const note = (status === 'SENT' && document.getElementById('shipNote')) ? (document.getElementById('shipNote').value || '').trim() : '';
+        if(!date || !sku || isNaN(qty)) return alert("Check fields");
+        logs.push({ date, sku, qty, status, note, id: Date.now(), by: currentActorEmail(), uid: currentActorUid() });
+        save(); renderAll();
+        document.getElementById(prefix + 'Sku').value = ''; 
+        document.getElementById(prefix + 'Qty').value = '';
+        if (status === 'SENT' && document.getElementById('shipNote')) document.getElementById('shipNote').value = '';
+    }
 
-  for(const l of open){
-    const tr=document.createElement("tr");
-    const remaining = Number(l.remaining ?? l.qty);
-    tr.innerHTML = `
-      <td>${state.currentMonth}</td>
-      <td>${l.date||""}</td>
-      <td>${l.product}</td>
-      <td>${l.qty}</td>
-      <td>${remaining}</td>
-      <td>${l.note||""}</td>
-      <td><input type="number" min="0" step="1" value="${remaining}" style="width:100px" data-rqty></td>
-      <td><input type="date" value="${todayISO()}" style="width:160px" data-rdate></td>
-      <td><button class="btn btn-success" data-recv>Receive</button></td>
-    `;
-    const btn = tr.querySelector("button[data-recv]");
-    btn.onclick = async ()=>{
-      const q = Number(tr.querySelector("input[data-rqty]").value || 0);
-      const d = tr.querySelector("input[data-rdate]").value || todayISO();
-      if(!Number.isFinite(q) || q<=0) return;
-      if(q>remaining) { alert("Qty received cannot exceed remaining."); return; }
+    function processBulkOrderLog(status) {
+        const prefix = status === 'ORDER' ? 'ord' : 'ship';
+        const dateEl = document.getElementById(prefix + 'Date');
+        const date = dateEl ? dateEl.value : '';
+        const note = (status === 'SENT' && document.getElementById('shipNote')) ? (document.getElementById('shipNote').value || '').trim() : '';
+        const textEl = document.getElementById(status === 'ORDER' ? 'inputOrdBulk' : 'inputShipBulk');
+        const text = (textEl && textEl.value ? textEl.value : '').trim();
+        if(!date) return alert("Select a date first");
+        if(!text) return;
+        const lines = text.split('\n');
+        const base = Date.now();
+        lines.forEach((line, i) => {
+            const parsed = parseBulkLine(line);
+            if(!parsed) return;
+            const { sku, qty } = parsed;
+            logs.push({ date, sku, qty: Math.abs(qty), status, note, id: base + i, by: currentActorEmail(), uid: currentActorUid() });
+        });
+        save(); renderAll();
+        if(textEl) textEl.value = "";
+    }
 
-      // create received log in current month (adds stock)
-      const actor=getActor();
-      addLog({ tab:"orders", type:"received", date:d, product:l.product, qty:q, note:l.note||"", ...actor });
+    function receiveLog(idx) {
+        const src = logs[idx];
+        if (!src) return;
+        if (src.status !== 'SENT') return;
+        const qtyRec = parseInt(prompt("Confirmed Qty Received:", src.qty));
+        const date = prompt("Arrival Date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
+        if (isNaN(qtyRec) || !date) return;
 
-      // reduce remaining on sent
-      const newRem = remaining - q;
-      l.remaining = newRem;
+        const sentQty = parseInt(src.qty);
+        if (isNaN(sentQty) || sentQty <= 0) return;
 
-      await saveMonth();
-      renderAll();
-    };
-    tbody.appendChild(tr);
-  }
-}
+        if (qtyRec > sentQty) return alert("Qty received cannot be higher than Qty SENT.");
 
-function renderMovements(){
-  // compile from current month logs only (simple)
-  const tbody=document.getElementById("movementsTableBody");
-  tbody.innerHTML="";
-  const tabFilter=document.getElementById("movTab").value||"";
-  const pSearch=(document.getElementById("movProductSearch").value||"").toLowerCase();
-  const from=document.getElementById("movFrom").value||"";
-  const to=document.getElementById("movTo").value||"";
+        // Add RECEIVED movement (inventory increases in this month)
+        const p = findProd(src.sku);
+        if (p) {
+            p.movements.push({ type: 'RECEIVED', qty: qtyRec, date, logId: src.id, by: currentActorEmail(), uid: currentActorUid() });
+        }
 
-  const logs = (state.monthData.logs||[]).map(l=>({month:state.currentMonth, ...l}));
-  const filtered = logs.filter(l=>{
-    if(tabFilter && l.tab!==tabFilter) return false;
-    if(pSearch && !String(l.product||"").toLowerCase().includes(pSearch)) return false;
-    if(from && (l.date||"")<from) return false;
-    if(to && (l.date||"")>to) return false;
-    return true;
-  });
+        // Create a RECEIVED log entry (keeps trace + exports)
+        logs.push({
+            date,
+            sku: src.sku,
+            qty: qtyRec,
+            status: 'RECEIVED',
+            id: Date.now(),
+            arrivalDate: date,
+            receivedQty: qtyRec,
+            sourceMonth: currentMonth,
+            sourceId: src.id,
+            note: src.note || '',
+            by: currentActorEmail(),
+            uid: currentActorUid()
+        });
 
-  for(const l of filtered){
-    const tr=document.createElement("tr");
-    tr.innerHTML=`<td>${l.month||""}</td><td>${l.date||""}</td><td>${l.tab||""}</td><td>${l.type||""}</td><td>${l.product||""}</td><td>${l.qty||""}</td><td>${l.note||""}</td><td>${l.by||""}</td>`;
-    tbody.appendChild(tr);
-  }
-}
+        const remaining = sentQty - qtyRec;
 
-/* =========================
-   Events / UI
-========================= */
-function showTab(tab){
-  document.querySelectorAll(".tab-content").forEach(el=>el.classList.add("hidden"));
-  document.getElementById(tab).classList.remove("hidden");
-  document.querySelectorAll(".nav-item").forEach(n=>n.classList.toggle("active", n.dataset.tab===tab));
-}
+        if (remaining > 0) {
+            // Keep the original as SENT with the remaining qty (so you can receive later)
+            src.qty = remaining;
+            // keep src.status = 'SENT'
+            // register partials (optional)
+            src.partialReceipts = Array.isArray(src.partialReceipts) ? src.partialReceipts : [];
+            src.partialReceipts.push({ month: currentMonth, date, qty: qtyRec, by: currentActorEmail(), uid: currentActorUid() });
+            src.lastPartialAt = date;
+        } else {
+            // Fully received: mark original as received (historical)
+            src.status = 'RECEIVED';
+            src.arrivalDate = date;
+            src.receivedQty = qtyRec;
+            src.receivedBy = currentActorEmail();
+            src.receivedUid = currentActorUid();
+        }
 
-function applyRoleUI(){
-  const navItems = document.querySelectorAll(".nav-item");
-  if(state.role==="pl"){
-    navItems.forEach(n=>{
-      n.style.display = (n.dataset.tab==="general") ? "" : "none";
+        save();
+        renderAll();
+    }
+
+    function editLog(idx) {
+        const log = logs[idx];
+        const nD = prompt("Date:", log.date); const nS = (prompt("Produto:", log.sku) || '').toString().trim(); const nQ = parseInt(prompt("Qty:", log.qty));
+        if(nD && nS && !isNaN(nQ)) {
+            log.date = nD; log.sku = nS; log.qty = nQ;
+            if(log.status === 'RECEIVED') {
+                const p = findProd(log.sku);
+                const m = p.movements.find(move => move.logId === log.id);
+                if(m) { m.qty = nQ; m.date = log.arrivalDate; }
+            }
+            save(); renderAll();
+        }
+    }
+
+    function renderRecentLogs() {
+        const bodyId = {'adjust':'recent-adjust','returns':'recent-returns','internal':'recent-internal','picking':'recent-picking','amsped':'recent-amsped','b2b':'recent-b2b'};
+        const types = {'adjust':['adjust'],'returns':['returns','refunds','recovered'],'internal':['customerCare','awards','officeNeeds'],'picking':['picking'],'amsped':['amsped'],'b2b':['b2b']};
+        Object.keys(bodyId).forEach(k => {
+            const b = document.getElementById(bodyId[k]); if(!b) return; b.innerHTML = '';
+            let moves = []; products.forEach((p,pi)=>p.movements.forEach((m,mi)=>{if(types[k].includes(m.type)) moves.push({...m,pi,mi,sku:p.sku})}));
+            moves.sort((a,b)=>b.mi-a.mi).slice(0,8).forEach(m => {
+                b.innerHTML += `<tr><td>${m.date}</td><td>${m.sku}</td><td>${m.qty}</td><td><button class="btn btn-danger" onclick="deleteMove(${m.pi},${m.mi})">X</button></td></tr>`;
+            });
+        });
+    }
+
+    function renderManagement() {
+        const bodyM = document.getElementById('bodyManagement'); bodyM.innerHTML = '';
+        products.forEach((p, i) => {
+            bodyM.innerHTML += `<tr><td>${p.sku}</td><td><input type="number" class="input-single" style="width:40px" value="${p.initial}" onchange="products[${i}].initial=parseInt(this.value);save();renderAll()"></td><td>${sum(p,'RECEIVED')}</td><td>${sum(p,'adjust')}</td><td>${sum(p,'picking')}</td><td>${sum(p,'amsped')}</td><td>${sum(p,'b2b')}</td><td><button onclick="showHistory(${i})">📜</button></td></tr>`;
+        });
+    }
+
+    function exportFullExcel() {
+        const wb = XLSX.utils.book_new();
+        const summary = products.map(p => ({ Produto: p.sku, Initial: p.initial, Received: sum(p,'RECEIVED'), Adjust: sum(p,'adjust'), Picking: sum(p,'picking'), Amsped: sum(p,'amsped'), B2B: sum(p,'b2b'), RealStock: calculateStock(p,'real',logs), ToConfirm: p.toConfirm }));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Summary");
+        const moves = []; products.forEach(p => p.movements.forEach(m => moves.push({ Produto: p.sku, Date: m.date, Type: m.type, Qty: m.qty, Note: m.note||'' })));
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(moves), "All Movements");
+        XLSX.writeFile(wb, `Inventory_Report_${currentMonth}.xlsx`);
+    }
+
+    function renderAnalytics() {
+        Object.values(charts).forEach(c => { if(c) c.destroy(); });
+        const days = Array.from({length: 31}, (_, i) => String(i + 1).padStart(2, '0'));
+        const pickingData = days.map(d => {
+            const ds = `${currentMonth}-${d}`;
+            return products.reduce((acc, p) => acc + p.movements.filter(m => m.date === ds && m.type === 'picking').reduce((a,c)=>a+c.qty,0), 0);
+        });
+        charts.daily = new Chart(document.getElementById('dailyChart'), {
+            type: 'line', data: { labels: days, datasets: [{ label: 'Picking Activity', data: pickingData, borderColor: '#007bff', fill: true }] },
+            options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+        });
+        const getRank = (type) => products.map(p => ({ sku: p.sku, q: sum(p, type) })).filter(x => x.q > 0).sort((a,b) => b.q - a.q).slice(0, 5);
+        charts.top = new Chart(document.getElementById('topSoldChart'), { type: 'bar', data: { labels: getRank('amsped').map(d => d.sku), datasets: [{ label: 'Sales', data: getRank('amsped').map(d => d.q), backgroundColor: '#2ecc71' }] }, options: { indexAxis: 'y', maintainAspectRatio: false } });
+        charts.ret = new Chart(document.getElementById('returnsChart'), { type: 'bar', data: { labels: getRank('returns').map(d => d.sku), datasets: [{ label: 'Returns', data: getRank('returns').map(d => d.q), backgroundColor: '#e74c3c' }] }, options: { indexAxis: 'y', maintainAspectRatio: false } });
+        
+        const body = document.getElementById('bodyDiscrepancies'); body.innerHTML = '';
+        products.forEach(p => {
+            const ordered = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'ORDER').reduce((a,c)=>a+c.qty, 0);
+            const received = sum(p, 'RECEIVED');
+            if(ordered > received) body.innerHTML += `<tr><td>${p.sku}</td><td>${ordered}</td><td>${received}</td><td style="color:red;font-weight:bold">${ordered-received}</td></tr>`;
+        });
+    }
+
+    function openTab(id) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        event.currentTarget.classList.add('active');
+        if(id === 'analytics') setTimeout(renderAnalytics, 50); else renderAll();
+    }
+
+    function setDates() {
+        const t = new Date().toISOString().split('T')[0];
+        let y = new Date(); y.setDate(y.getDate()-1); 
+        document.querySelectorAll('.today-date').forEach(el => el.value = t);
+        document.querySelectorAll('.yesterday-date').forEach(el => el.value = y.toISOString().split('T')[0]);
+    }
+
+    function addSingle(type) {
+        const k = type.charAt(0).toUpperCase() + type.slice(1);
+        const s = document.getElementById(`single${k}Sku`).value.trim(), q = parseInt(document.getElementById(`single${k}Qty`).value), d = document.getElementById(`date${k}`).value;
+        const p = findProd(s);
+        if(p && !isNaN(q)) { p.movements.push({ type, qty: (type==='adjust'?q:Math.abs(q)), date: d, note: document.getElementById(`single${k}Note`)?.value || '' }); save(); renderAll(); document.getElementById(`single${k}Sku`).value=""; }
+    }
+
+    function processBulk(type) {
+        const k = type.charAt(0).toUpperCase() + type.slice(1);
+        const text = document.getElementById('input' + k).value.trim(), date = document.getElementById('date' + k).value;
+        text.split('\n').forEach(line => {
+            const parsed = parseBulkLine(line); if(!parsed) return;
+            const { sku, qty } = parsed;
+            const prod = findProd(sku);
+            if(prod) prod.movements.push({ type, qty: (type==='adjust'?qty:Math.abs(qty)), date, by: currentActorEmail(), uid: currentActorUid() });
+        });
+        save(); renderAll(); document.getElementById('input' + k).value = "";
+    }
+
+    function addSingleFromSelect(id) {
+        const t = document.getElementById('type'+id).value, s = document.getElementById('single'+id+'Sku').value.trim(), q = parseInt(document.getElementById('single'+id+'Qty').value), d = document.getElementById('date'+id).value;
+        const p = findProd(s); if(p&&!isNaN(q)) { p.movements.push({type:t, qty:Math.abs(q), date:d, by: currentActorEmail(), uid: currentActorUid() }); save(); renderAll(); document.getElementById('single'+id+'Sku').value=""; }
+    }
+
+
+function processBulkFromSelect(id) {
+    // For tabs that have a type <select> (e.g., Returns): apply the selected type to all bulk lines.
+    const t = document.getElementById('type'+id).value;
+    const textEl = document.getElementById('input'+id);
+    const dateEl = document.getElementById('date'+id);
+    if(!textEl || !dateEl) return;
+    const text = (textEl.value || '').trim();
+    const d = dateEl.value;
+    if(!text) return;
+
+    text.split('\n').forEach(line => {
+        const parsed = parseBulkLine(line); if(!parsed) return;
+        const { sku, qty } = parsed;
+        const p = findProd(sku);
+        if(p) p.movements.push({ type: t, qty: Math.abs(qty), date: d, by: currentActorEmail(), uid: currentActorUid() });
     });
-    document.getElementById("plRealtimeInfo").style.display="";
-  }else if(state.role==="pt"){
-    navItems.forEach(n=>{ n.style.display=""; });
-    document.getElementById("plRealtimeInfo").style.display="none";
-  }else{
-    navItems.forEach(n=>{ n.style.display="none"; });
-    document.getElementById("plRealtimeInfo").style.display="none";
-  }
 
-  // backfill button only PT
-  document.getElementById("btnBackfillGeneral").classList.toggle("hidden", state.role!=="pt");
+    save(); renderAll();
+    textEl.value = "";
 }
 
-function renderAll(){
-  fillProductList();
-  renderWarehouse();
-  renderInit();
-  renderGeneral();
-  renderLogs("adjustTableBody","adjustments");
-  renderLogs("returnsTableBody","returns");
-  renderLogs("internalTableBody","internal");
-  renderLogs("ordersTableBody","orders");
-  renderLogs("amspedTableBody","amsped");
-  renderLogs("b2bTableBody","b2b");
-  renderOrdersOpenShipments();
-  renderMovements();
-}
 
-function fillMovTabOptions(){
-  const sel=document.getElementById("movTab");
-  const tabs = ["adjustments","returns","internal","orders","amsped","b2b"];
-  sel.innerHTML = `<option value="">All</option>` + tabs.map(t=>`<option value="${t}">${t}</option>`).join("");
-}
-
-async function init(){
-  // month select
-  const ms=document.getElementById("monthSelect");
-  state.currentMonth = ensureMonthList(ms);
-
-  // set defaults
-  document.getElementById("internalDate").value=todayISO();
-  document.getElementById("orderDate").value=todayISO();
-  document.getElementById("shipDate").value=todayISO();
-  document.getElementById("movFrom").value="";
-  document.getElementById("movTo").value="";
-
-  fillMovTabOptions();
-
-  // nav clicks
-  document.querySelectorAll(".nav-item").forEach(n=>{
-    n.onclick=()=>showTab(n.dataset.tab);
-  });
-
-  // month change
-  ms.onchange = async ()=>{
-    state.currentMonth = ms.value;
-    if(state.role==="pt"){
-      await loadMonth(state.currentMonth);
-      renderAll();
-      // publish general snapshot
-      await publishGeneralForMonth(state.currentMonth);
-    }else if(state.role==="pl"){
-      subscribePLGeneral(state.currentMonth);
+    function showHistory(i) {
+        const p = products[i], b = document.getElementById('histBody'); b.innerHTML = '';
+        p.movements.forEach((m, mi) => b.innerHTML += `<tr><td>${m.date}</td><td>${m.type}</td><td>${m.qty}</td><td>${m.note||''}</td><td><button class="btn btn-danger" onclick="products[${i}].movements.splice(${mi},1);save();showHistory(${i});renderAll()">X</button></td></tr>`);
+        document.getElementById('historyModal').style.display = 'block';
     }
-  };
 
-  document.getElementById("newMonthBtn").onclick=()=>{
-    // just ensures selector has current month, already populated; no-op
-    alert("Select month from dropdown.");
-  };
-
-  // General
-  document.getElementById("generalSearch").oninput=()=>renderGeneral();
-  document.getElementById("refreshGeneralBtn").onclick=async ()=>{
-    if(state.role==="pt"){
-      await loadMonth(state.currentMonth);
-      renderAll();
-      await publishGeneralForMonth(state.currentMonth);
-    }else if(state.role==="pl"){
-      subscribePLGeneral(state.currentMonth);
+    function renderMiniDash() {
+        const pick = products.reduce((a,p)=>a+sum(p,'picking'),0), sales = products.reduce((a,p)=>a+sum(p,'amsped'),0), rec = products.reduce((a,p)=>a+sum(p,'RECEIVED'),0);
+        document.getElementById('dash-general').innerHTML = `<div class="stat-card"><h4>Received</h4><div class="value">${rec}</div></div><div class="stat-card"><h4>Transit</h4><div class="value" style="color:#000">${logs.filter(l=>l.status==='SENT').reduce((a,c)=>a+c.qty,0)}</div></div>`;
     }
-  };
-  document.getElementById("btnBackfillGeneral").onclick=async ()=>{
-    await backfillAllMonthsForPL();
-    alert("Backfill done.");
-  };
 
-  // Warehouse upload/export
-  document.getElementById("warehouseUploadBtn").onclick=()=>document.getElementById("warehouseFile").click();
-  document.getElementById("warehouseFile").onchange=handleWarehouseFile;
-  document.getElementById("warehouseExportBtn").onclick=exportWarehouseCsv;
+    function filterTable(tid, sid) { const q = document.getElementById(sid).value.toLowerCase(); document.querySelectorAll(`#${tid} tr`).forEach(r => r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none'); }
+    function deleteLog(i) { logs.splice(i,1); save(); renderAll(); }
+    function deleteMove(pi, mi) { products[pi].movements.splice(mi,1); save(); renderAll(); }
+    function closeModal() { document.getElementById('historyModal').style.display='none'; }
+    function resetMonth() { if(confirm("WIPE MONTH?")) { products.forEach(p => p.movements = []); logs=[]; save(); renderAll(); } }
+    function addNewProductMaster() {
+        const prod = (prompt("Produto:") || '').toString().trim();
+        if (!prod) return;
 
-  // Management
-  document.getElementById("addInitBtn").onclick=async ()=>{
-    const p=document.getElementById("initProduct").value.trim();
-    const q=Number(document.getElementById("initQty").value||0);
-    if(!p) return;
-    ensureProductEntry(p).init = q;
-    const actor=getActor();
-    addLog({tab:"management", type:"init", date:todayISO(), product:p, qty:q, ...actor});
-    await saveMonth();
-    renderAll();
-  };
+        // Add to Warehouse master list (so it becomes available everywhere)
+        const exists = (warehouseItems || []).some(r => (r?.produto || '').toString().trim() === prod);
+        if (!exists) {
+            warehouseItems.push({ produto: prod, posicao: '', dimensoes: '', peso: '', volume: '' });
+            saveWarehouse();
+        }
 
-  document.getElementById("btnImportInit").onclick=()=>document.getElementById("managementInitFile").click();
-  document.getElementById("managementInitFile").onchange=handleInitFile;
-  document.getElementById("btnExportInit").onclick=exportInitCsv;
-
-  // Adjustments
-  document.getElementById("addAdjustBtn").onclick=async ()=>{
-    const type=document.getElementById("adjustmentType").value;
-    const p=document.getElementById("adjustProduct").value.trim();
-    const q=Number(document.getElementById("adjustQty").value||0);
-    if(!p || !q) return;
-    const actor=getActor();
-    addLog({tab:"adjustments", type, date:todayISO(), product:p, qty:Math.abs(q), ...actor});
-    await saveMonth();
-    renderAll();
-  };
-  document.getElementById("addAdjustBulkBtn").onclick=async ()=>{
-    const type=document.getElementById("adjustmentType").value;
-    const items=parseBulkLines(document.getElementById("adjustBulk").value);
-    const actor=getActor();
-    for(const it of items){
-      addLog({tab:"adjustments", type, date:todayISO(), product:it.product, qty:Math.abs(it.qty), ...actor});
+        // Re-load month data to reconcile products with the updated master list
+        if (currentMonth && allData[currentMonth]) {
+            loadMonthData();
+        } else {
+            renderWarehouse(); renderMovements();
+            alert('Produto adicionado ao Warehouse. Escolhe/inicializa um mês para começar.');
+        }
     }
-    document.getElementById("adjustBulk").value="";
-    await saveMonth();
-    renderAll();
-  };
 
-  // Returns
-  document.getElementById("addReturnBtn").onclick=async ()=>{
-    const type=document.getElementById("returnType").value;
-    const p=document.getElementById("returnProduct").value.trim();
-    const q=Number(document.getElementById("returnQty").value||0);
-    if(!p || !q) return;
-    const actor=getActor();
-    addLog({tab:"returns", type, date:todayISO(), product:p, qty:Math.abs(q), ...actor});
-    await saveMonth();
-    renderAll();
-  };
-  document.getElementById("addReturnsBulkBtn").onclick=async ()=>{
-    const type=document.getElementById("returnType").value;
-    const items=parseBulkLines(document.getElementById("returnsBulk").value);
-    const actor=getActor();
-    for(const it of items){
-      addLog({tab:"returns", type, date:todayISO(), product:it.product, qty:Math.abs(it.qty), ...actor});
+
+    /* =========================
+       WAREHOUSE MASTER (Upload + Editable Table)
+       Columns expected:
+       A Produto | B Posição | C Dimensões | D Peso | E Volume
+    ========================== */
+
+    function saveWarehouse() {
+        // Firestore save (warehouse master)
+        if (!window.fb) return;
+        if (userRole === 'pl') return; // PL is read-only
+        window.fb.setDocData(['meta', 'warehouse'], { items: warehouseItems || [], updatedAt: new Date().toISOString() })
+            .catch(e => console.error('Warehouse save failed', e));
     }
-    document.getElementById("returnsBulk").value="";
-    await saveMonth();
-    renderAll();
-  };
 
-  // Internal
-  document.getElementById("addInternalBtn").onclick=async ()=>{
-    const type=document.getElementById("internalType").value;
-    const date=document.getElementById("internalDate").value||todayISO();
-    const p=document.getElementById("internalProduct").value.trim();
-    const q=Number(document.getElementById("internalQty").value||0);
-    if(!p || !q) return;
-    const actor=getActor();
-    addLog({tab:"internal", type, date, product:p, qty:Math.abs(q), ...actor});
-    await saveMonth();
-    renderAll();
-  };
-  document.getElementById("addInternalBulkBtn").onclick=async ()=>{
-    const type=document.getElementById("internalType").value;
-    const date=document.getElementById("internalDate").value||todayISO();
-    const items=parseBulkLines(document.getElementById("internalBulk").value);
-    const actor=getActor();
-    for(const it of items){
-      addLog({tab:"internal", type, date, product:it.product, qty:Math.abs(it.qty), ...actor});
+    async function loadWarehouseFromFirestore() {
+        if (!window.fb) return;
+        const data = await window.fb.getDocData(['meta', 'warehouse']);
+        warehouseItems = (data && Array.isArray(data.items)) ? data.items : [];
     }
-    document.getElementById("internalBulk").value="";
-    await saveMonth();
-    renderAll();
-  };
 
-  // Orders
-  document.getElementById("addOrderBtn").onclick=async ()=>{
-    const date=document.getElementById("orderDate").value||todayISO();
-    const p=document.getElementById("orderProduct").value.trim();
-    const q=Number(document.getElementById("orderQty").value||0);
-    if(!p || !q) return;
-    const actor=getActor();
-    addLog({tab:"orders", type:"order", date, product:p, qty:Math.abs(q), ...actor});
-    await saveMonth();
-    renderAll();
-  };
-  document.getElementById("addOrderBulkBtn").onclick=async ()=>{
-    const date=document.getElementById("orderDate").value||todayISO();
-    const items=parseBulkLines(document.getElementById("orderBulk").value);
-    const actor=getActor();
-    for(const it of items){
-      addLog({tab:"orders", type:"order", date, product:it.product, qty:Math.abs(it.qty), ...actor});
+function normalizeHeader(h) {
+        return (h || '').toString().trim().toLowerCase()
+            .replace(/\s+/g,' ')
+            .replace(/ç/g,'c')
+            .normalize('NFD').replace(/[\u0300-\u036f]/g,''); // remove accents
     }
-    document.getElementById("orderBulk").value="";
-    await saveMonth();
-    renderAll();
-  };
-  document.getElementById("addShipBtn").onclick=async ()=>{
-    const date=document.getElementById("shipDate").value||todayISO();
-    const p=document.getElementById("shipProduct").value.trim();
-    const q=Number(document.getElementById("shipQty").value||0);
-    const note=(document.getElementById("shipNote").value||"").trim();
-    if(!p || !q) return;
-    const actor=getActor();
-    addLog({tab:"orders", type:"sent", date, product:p, qty:Math.abs(q), remaining:Math.abs(q), note, ...actor});
-    document.getElementById("shipNote").value="";
-    await saveMonth();
-    renderAll();
-  };
-  document.getElementById("addShipBulkBtn").onclick=async ()=>{
-    const date=document.getElementById("shipDate").value||todayISO();
-    const note=(document.getElementById("shipBulkNote").value||"").trim();
-    const items=parseBulkLines(document.getElementById("shipBulk").value);
-    const actor=getActor();
-    for(const it of items){
-      addLog({tab:"orders", type:"sent", date, product:it.product, qty:Math.abs(it.qty), remaining:Math.abs(it.qty), note, ...actor});
+
+    
+
+    // --- Volume auto-calc from Dimensões (C*L*A) ---
+    function parseDimNumbers(dimStr) {
+        const s = (dimStr || '').toString().trim();
+        const m = s.match(/(\d+(?:[\.,]\d+)?)/g);
+        if (!m || m.length < 3) return null;
+        const nums = m.slice(0, 3).map(x => parseFloat(x.replace(',', '.')));
+        if (nums.some(n => Number.isNaN(n))) return null;
+        return nums;
     }
-    document.getElementById("shipBulk").value="";
-    await saveMonth();
-    renderAll();
-  };
-
-  // Amsped
-  document.getElementById("addAmspedBtn").onclick=async ()=>{
-    const p=document.getElementById("amspedProduct").value.trim();
-    const q=Number(document.getElementById("amspedQty").value||0);
-    if(!p || !q) return;
-    const actor=getActor();
-    addLog({tab:"amsped", type:"amsped", date:todayISO(), product:p, qty:Math.abs(q), ...actor});
-    await saveMonth();
-    renderAll();
-  };
-  document.getElementById("addAmspedBulkBtn").onclick=async ()=>{
-    const items=parseBulkLines(document.getElementById("amspedBulk").value);
-    const actor=getActor();
-    for(const it of items){
-      addLog({tab:"amsped", type:"amsped", date:todayISO(), product:it.product, qty:Math.abs(it.qty), ...actor});
+    function formatNumberPT(n) {
+        if (n == null || Number.isNaN(n)) return '';
+        const isInt = Math.abs(n - Math.round(n)) < 1e-9;
+        let s = isInt ? String(Math.round(n)) : n.toFixed(2).replace(/\.?0+$/, '');
+        return s.replace('.', ',');
     }
-    document.getElementById("amspedBulk").value="";
-    await saveMonth();
-    renderAll();
-  };
-
-  // B2B
-  document.getElementById("addB2bBtn").onclick=async ()=>{
-    const p=document.getElementById("b2bProduct").value.trim();
-    const q=Number(document.getElementById("b2bQty").value||0);
-    if(!p || !q) return;
-    const actor=getActor();
-    addLog({tab:"b2b", type:"b2b", date:todayISO(), product:p, qty:Math.abs(q), ...actor});
-    await saveMonth();
-    renderAll();
-  };
-  document.getElementById("addB2bBulkBtn").onclick=async ()=>{
-    const items=parseBulkLines(document.getElementById("b2bBulk").value);
-    const actor=getActor();
-    for(const it of items){
-      addLog({tab:"b2b", type:"b2b", date:todayISO(), product:it.product, qty:Math.abs(it.qty), ...actor});
+    function computeVolumeFromDim(dimStr) {
+        const nums = parseDimNumbers(dimStr);
+        if (!nums) return '';
+        const vol = nums[0] * nums[1] * nums[2];
+        return formatNumberPT(vol);
     }
-    document.getElementById("b2bBulk").value="";
-    await saveMonth();
-    renderAll();
-  };
 
-  // Movements
-  document.getElementById("movApplyBtn").onclick=()=>renderMovements();
-  document.getElementById("exportMovementsCsvBtn").onclick=exportMovementsCsv;
-  document.getElementById("exportMovementsXlsxBtn").onclick=exportMovementsXlsx;
-
-  // Auth buttons
-  document.getElementById("btnLogin").onclick=doLogin;
-  document.getElementById("btnLogout").onclick=doLogout;
-
-  // Initial hide tabs until auth
-  applyRoleUI();
-
-  // load base data if already signed in
-  wireAuth();
-
-  // initial UI
-  showTab("general");
-}
-
-let plUnsub=null;
-function subscribePLGeneral(monthId){
-  if(plUnsub){ plUnsub(); plUnsub=null; }
-  const { db, doc, onSnapshot } = window.__fb;
-  const ref = doc(db, "general", monthId);
-  plUnsub = onSnapshot(ref, { includeMetadataChanges:true }, (snap)=>{
-    if(!snap.exists()){
-      state.plGeneralItems=[];
-      document.getElementById("generalLastUpdate").textContent = "Last update: (no snapshot yet — PT must publish)";
-      renderGeneral();
-      return;
+function mapRowToWarehouse(row) {
+        const dimensoes = (row[2] ?? '').toString().trim();
+        return {
+            produto: (row[0] ?? '').toString().trim(),
+            posicao: (row[1] ?? '').toString().trim(),
+            dimensoes,
+            peso: (row[3] ?? '').toString().trim(),
+            // Column E (volume) is ignored; we compute it from Dimensões
+            volume: computeVolumeFromDim(dimensoes),
+        };
     }
-    const data=snap.data();
-    state.plGeneralItems = Array.isArray(data.items) ? data.items : [];
-    document.getElementById("generalLastUpdate").textContent = "Last update: " + (data.updatedBy ? `by ${data.updatedBy}` : "ok");
-    renderGeneral();
-  }, (err)=>{
-    console.error(err);
-    document.getElementById("generalLastUpdate").textContent = "Last update: ERROR ("+err.message+")";
-    state.plGeneralItems=[];
-    renderGeneral();
-  });
-}
+function renderWarehouse() {
+        const body = document.getElementById('bodyWarehouse');
+        if (!body) return; // safety for older saved pages
+        body.innerHTML = '';
 
-async function doLogin(){
-  const email=document.getElementById("loginEmail").value.trim();
-  const pass=document.getElementById("loginPass").value;
-  if(!email || !pass) return;
-  try{
-    await window.__fb.signInWithEmailAndPassword(window.__fb.auth, email, pass);
-  }catch(e){
-    alert("Login failed: " + e.message);
-  }
-}
-async function doLogout(){
-  try{
-    await window.__fb.signOut(window.__fb.auth);
-  }catch(e){
-    alert("Logout failed: " + e.message);
-  }
-}
+        let changed = false;
 
-function wireAuth(){
-  window.__fb.onAuthStateChanged(window.__fb.auth, async (user)=>{
-    if(!user){
-      state.role="none";
-      state.userEmail="";
-      document.getElementById("authStatus").textContent="Not signed in";
-      document.getElementById("btnLogin").classList.remove("hidden");
-      document.getElementById("btnLogout").classList.add("hidden");
-      applyRoleUI();
-      return;
+        warehouseItems.forEach((it, idx) => {
+            // Keep volume consistent with Dimensões (auto)
+            const autoVol = computeVolumeFromDim(it.dimensoes);
+            if ((it.volume || '') !== autoVol) { it.volume = autoVol; changed = true; }
+
+            const tr = document.createElement('tr');
+
+            const mkInput = (value, field, opts = {}) => {
+                const td = document.createElement('td');
+                const inp = document.createElement('input');
+                inp.value = value || '';
+                inp.className = 'input';
+                inp.style.width = '100%';
+                if (opts.readonly) {
+                    inp.readOnly = true;
+                    inp.style.background = '#f5f5f5';
+                }
+                inp.onchange = () => {
+                    if (!opts.readonly) {
+                        warehouseItems[idx][field] = inp.value;
+                        saveWarehouse();
+                    }
+                    if (opts.onchange) opts.onchange(inp.value);
+                };
+                td.appendChild(inp);
+                return { td, inp };
+            };
+
+            const prod = mkInput(it.produto, 'produto');
+            const pos  = mkInput(it.posicao, 'posicao');
+            const peso = mkInput(it.peso, 'peso');
+
+            // Volume input (readonly, computed)
+            const vol  = mkInput(it.volume, 'volume', { readonly: true });
+
+            // Dimensões input updates volume automatically
+            const dim  = mkInput(it.dimensoes, 'dimensoes', {
+                onchange: (v) => {
+                    warehouseItems[idx].dimensoes = v;
+                    const vAuto = computeVolumeFromDim(v);
+                    warehouseItems[idx].volume = vAuto;
+                    vol.inp.value = vAuto;
+                    saveWarehouse();
+                }
+            });
+
+            tr.appendChild(prod.td);
+            tr.appendChild(pos.td);
+            tr.appendChild(dim.td);
+            tr.appendChild(peso.td);
+            tr.appendChild(vol.td);
+
+            const tdAct = document.createElement('td');
+            tdAct.innerHTML = `<button class="btn btn-danger" onclick="deleteWarehouseRow(${idx})">🗑️</button>`;
+            tr.appendChild(tdAct);
+
+            body.appendChild(tr);
+        });
+
+        if (changed) saveWarehouse();
     }
-    state.userEmail = user.email || "";
-    if(isPTEmail(state.userEmail)) state.role="pt";
-    else if(isPLEmail(state.userEmail)) state.role="pl";
-    else state.role="none";
 
-    document.getElementById("authStatus").textContent = `Signed in: ${state.userEmail} (${state.role.toUpperCase()})`;
-    document.getElementById("btnLogin").classList.add("hidden");
-    document.getElementById("btnLogout").classList.remove("hidden");
 
-    applyRoleUI();
-
-    await loadWarehouse();
-    fillProductList();
-
-    if(state.role==="pt"){
-      await loadMonth(state.currentMonth);
-      renderAll();
-      await publishGeneralForMonth(state.currentMonth);
-    }else if(state.role==="pl"){
-      subscribePLGeneral(state.currentMonth);
-      showTab("general");
-    }else{
-      alert("Email not allowed.");
+function addWarehouseRow() {
+        warehouseItems.unshift({ produto:'', posicao:'', dimensoes:'', peso:'', volume:'' });
+        saveWarehouse();
+        renderWarehouse(); renderMovements();
     }
-  });
-}
 
-/* =========================
-   File imports/exports
-========================= */
-async function handleWarehouseFile(evt){
-  const file=evt.target.files?.[0];
-  if(!file) return;
-  const ext=(file.name.split('.').pop()||"").toLowerCase();
-
-  let rows=[];
-  if(ext==="csv"){
-    const text=await file.text();
-    const lines=text.split(/\r?\n/).filter(l=>l.trim().length);
-    for(const line of lines){
-      // CSV can be ; or ,
-      const parts=line.includes(";") ? line.split(";") : line.split(",");
-      rows.push(parts.map(p=>p.trim()));
+    function deleteWarehouseRow(idx) {
+        if (!confirm('Delete this row?')) return;
+        warehouseItems.splice(idx, 1);
+        saveWarehouse();
+        renderWarehouse(); renderMovements();
     }
-  }else{
-    const data=await file.arrayBuffer();
-    const wb=XLSX.read(data,{type:"array"});
-    const ws=wb.Sheets[wb.SheetNames[0]];
-    rows=XLSX.utils.sheet_to_json(ws,{header:1});
-  }
 
-  // Skip header if contains "produto"
-  if(rows.length && String(rows[0][0]||"").toLowerCase().includes("prod")){
-    rows=rows.slice(1);
-  }
-
-  const items=[];
-  for(const r of rows){
-    const product=String(r[0]||"").trim();
-    if(!product) continue;
-    const position=String(r[1]||"").trim();
-    const dimensions=String(r[2]||"").trim();
-    const weight=String(r[3]||"").trim();
-    const volume=dimToVolume(dimensions); // ignore column E
-    items.push({product, position, dimensions, weight, volume});
-  }
-
-  state.warehouse=items;
-  await saveWarehouse();
-  fillProductList();
-  renderWarehouse();
-  renderGeneral();
-}
-
-function downloadText(filename, text){
-  const blob=new Blob([text],{type:"text/plain;charset=utf-8"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a");
-  a.href=url;
-  a.download=filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-function exportWarehouseCsv(){
-  const sep=";";
-  const lines=["sep=;","Product;Position;Dimensions;Weight;Volume"];
-  for(const w of state.warehouse){
-    lines.push([w.product,w.position,w.dimensions,w.weight,(w.volume ?? dimToVolume(w.dimensions))].map(v=>String(v??"").replaceAll(";"," ")).join(sep));
-  }
-  downloadText(`warehouse_${state.currentMonth}.csv`, lines.join("\n"));
-}
-
-async function handleInitFile(evt){
-  const file=evt.target.files?.[0];
-  if(!file) return;
-  const ext=(file.name.split('.').pop()||"").toLowerCase();
-
-  let rows=[];
-  if(ext==="csv"){
-    const text=await file.text();
-    const lines=text.split(/\r?\n/).filter(l=>l.trim().length);
-    for(const line of lines){
-      const parts=line.includes(";") ? line.split(";") : line.split(",");
-      rows.push(parts.map(p=>p.trim()));
+    function clearWarehouse() {
+        if (!confirm('Clear ALL warehouse rows?')) return;
+        warehouseItems = [];
+        saveWarehouse();
+        renderWarehouse(); renderMovements();
+    syncProductsFromWarehouse();
     }
-  }else{
-    const data=await file.arrayBuffer();
-    const wb=XLSX.read(data,{type:"array"});
-    const ws=wb.Sheets[wb.SheetNames[0]];
-    rows=XLSX.utils.sheet_to_json(ws,{header:1});
-  }
 
-  if(rows.length && String(rows[0][0]||"").toLowerCase().includes("prod")){
-    rows=rows.slice(1);
-  }
+    function importWarehouseFile() {
+        const input = document.getElementById('warehouseFile');
+        const file = input?.files?.[0];
+        if (!file) { alert('Select a CSV/XLSX file first.'); return; }
 
-  // reset init to 0 for all products
-  for(const p of getAllProducts()){
-    ensureProductEntry(p).init = 0;
-  }
+        const name = file.name.toLowerCase();
+        if (name.endsWith('.xlsx') || name.endsWith('.xls')) return importWarehouseXLSX(file);
+        return importWarehouseCSV(file);
+    }
 
-  for(const r of rows){
-    const product=String(r[0]||"").trim();
-    if(!product) continue;
-    const qty=Number(r[1]||0);
-    ensureProductEntry(product).init = Number.isFinite(qty) ? qty : 0;
-  }
+    function importWarehouseCSV(file) {
+        if (typeof Papa === 'undefined') {
+            alert('PapaParse not loaded. Check your internet connection or include the library.');
+            return;
+        }
 
-  await saveMonth();
-  renderAll();
-}
+        Papa.parse(file, {
+            skipEmptyLines: true,
+            complete: (res) => {
+                const data = res.data || [];
+                if (!data.length) { alert('CSV empty.'); return; }
 
-function exportInitCsv(){
-  const sep=";";
-  const lines=["sep=;","Product;InitQty"];
-  const items = getAllProducts().map(p=>({p, q:Number(state.monthData.products[p]?.init||0)}));
-  for(const it of items){
-    lines.push(`${it.p.replaceAll(";"," ")};${it.q}`);
-  }
-  downloadText(`init_${state.currentMonth}.csv`, lines.join("\n"));
-}
+                // detect header row
+                const first = data[0];
+                const looksHeader = first.some(c => {
+                    const h = normalizeHeader(c);
+                    return ['produto','product','products picking','position','posicao','dimensoes','dimensoes c*l*a','peso','weight','volume'].includes(h);
+                });
 
-function exportMovementsCsv(){
-  const sep=";";
-  const lines=["sep=;","Month;Date;Tab;Type;Product;Qty;Obs;By"];
-  const logs = (state.monthData.logs||[]).map(l=>({month:state.currentMonth, ...l}));
-  for(const l of logs){
-    lines.push([l.month,l.date,l.tab,l.type,l.product,l.qty,(l.note||""),(l.by||"")].map(v=>String(v??"").replaceAll(";"," ")).join(sep));
-  }
-  downloadText(`movements_${state.currentMonth}.csv`, lines.join("\n"));
-}
-function exportMovementsXlsx(){
-  const logs = (state.monthData.logs||[]).map(l=>({
-    month: state.currentMonth,
-    date: l.date||"",
-    tab: l.tab||"",
-    type: l.type||"",
-    product: l.product||"",
-    qty: l.qty||"",
-    obs: l.note||"",
-    by: l.by||""
-  }));
-  const ws=XLSX.utils.json_to_sheet(logs);
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Movements");
-  XLSX.writeFile(wb, `movements_${state.currentMonth}.xlsx`);
-}
+                let rows = data;
+                if (looksHeader) rows = data.slice(1);
 
-/* =========================
-   Boot
-========================= */
-document.addEventListener("DOMContentLoaded", init);
+                const parsed = rows
+                    .map(r => mapRowToWarehouse(r))
+                    .filter(r => Object.values(r).some(v => v && v.trim() !== ''));
+
+                warehouseItems = parsed;
+                saveWarehouse();
+                renderWarehouse(); renderMovements();
+                alert(`Imported ${warehouseItems.length} rows.`);
+            syncProductsFromWarehouse();
+            },
+            error: (err) => alert('CSV parse error: ' + err.message)
+        });
+    }
+
+    function importWarehouseXLSX(file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = new Uint8Array(e.target.result);
+            const wb = XLSX.read(data, { type: 'array' });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+
+            if (!rows.length) { alert('XLSX empty.'); return; }
+
+            const first = rows[0];
+            const looksHeader = first.some(c => {
+                const h = normalizeHeader(c);
+                return ['produto','product','products picking','position','posicao','dimensoes','dimensoes c*l*a','peso','weight','volume'].includes(h);
+            });
+
+            const dataRows = looksHeader ? rows.slice(1) : rows;
+
+            const parsed = dataRows
+                .map(r => mapRowToWarehouse(r))
+                .filter(r => Object.values(r).some(v => v && v.toString().trim() !== ''));
+
+            warehouseItems = parsed;
+            saveWarehouse();
+            renderWarehouse(); renderMovements();
+            alert(`Imported ${warehouseItems.length} rows.`);
+            syncProductsFromWarehouse();
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    
+
+    
+    // --- MANAGEMENT: Bulk import initial quantities (Produto, Quantidade) ---
+    function detectInitHeaderRow(row) {
+        if (!row) return false;
+        return row.some(c => {
+            const h = normalizeHeader(c);
+            return ['produto','product','item','artigo'].includes(h) || ['quantidade','quantity','qty','qtd','stock'].includes(h);
+        });
+    }
+
+    function applyInitQtyRows(rows) {
+        if (!rows || !rows.length) { alert('No rows found.'); return; }
+
+        // Build index of products by normalized name (produto)
+        const idx = new Map();
+        products.forEach((p, i) => {
+            const key = String(p.sku || '').trim().toLowerCase();
+            if (key) idx.set(key, i);
+        });
+
+        // Reset all initial quantities to 0 before applying (so the file becomes the source of truth)
+        products.forEach(p => { p.initial = 0; });
+
+        let applied = 0;
+        const missing = [];
+        rows.forEach(r => {
+            const prod = (r[0] ?? '').toString().trim();
+            if (!prod) return;
+
+            const rawQty = (r[1] ?? '').toString().trim();
+            const num = Number(rawQty.replace(',', '.'));
+            const qty = isNaN(num) ? 0 : Math.round(num);
+
+            const key = prod.toLowerCase();
+            if (idx.has(key)) {
+                products[idx.get(key)].initial = qty;
+                applied++;
+            } else {
+                missing.push(prod);
+            }
+        });
+
+        save();
+        renderAll();
+
+        let msg = `Imported initial quantities for ${applied} products.`;
+        if (missing.length) {
+            msg += `\nNot found in Warehouse master list (${missing.length}): ${missing.slice(0, 20).join(', ')}${missing.length > 20 ? '...' : ''}`;
+        }
+        alert(msg);
+    }
+
+    function importInitQtyCSV(file) {
+        Papa.parse(file, {
+            skipEmptyLines: true,
+            complete: (res) => {
+                const data = res.data || [];
+                if (!data.length) { alert('CSV empty.'); return; }
+                const looksHeader = detectInitHeaderRow(data[0]);
+                const rows = looksHeader ? data.slice(1) : data;
+                applyInitQtyRows(rows);
+            },
+            error: (err) => alert('CSV parse error: ' + err.message)
+        });
+    }
+
+    function importInitQtyXLSX(file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = new Uint8Array(e.target.result);
+            const wb = XLSX.read(data, { type: 'array' });
+            const sheet = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+            if (!rows.length) { alert('XLSX empty.'); return; }
+            const looksHeader = detectInitHeaderRow(rows[0]);
+            const dataRows = looksHeader ? rows.slice(1) : rows;
+            applyInitQtyRows(dataRows);
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function importInitQtyFile() {
+        const input = document.getElementById('mgmtInitUpload');
+        const file = input && input.files ? input.files[0] : null;
+        if (!file) { alert('Choose a CSV or XLSX file first.'); return; }
+
+        const name = (file.name || '').toLowerCase();
+        if (name.endsWith('.csv')) return importInitQtyCSV(file);
+        if (name.endsWith('.xlsx') || name.endsWith('.xls')) return importInitQtyXLSX(file);
+
+        alert('Unsupported file type. Please upload CSV or XLSX.');
+    }
+
+
+// --- MOVEMENTS (all tabs) ---
+    function mapMovementToTab(type) {
+        const map = {
+            'adjust': 'Adjustments',
+            'returns': 'Returns',
+            'recovered': 'Returns',
+            'refunds': 'Returns',
+            'customerCare': 'Internal & Care',
+            'awards': 'Internal & Care',
+            'officeNeeds': 'Internal & Care',
+            'picking': 'Picking Out',
+            'amsped': 'Amsped Sales',
+            'b2b': 'B2B',
+            'RECEIVED': 'Orders & Shipments'
+        };
+        return map[type] || 'Other';
+    }
+
+    function getAllMovementsBase() {
+        let rows = [];
+
+        // Product movements (from all operational tabs)
+        products.forEach(p => {
+            (p.movements || []).forEach(m => {
+                const date = m.date || '';
+                const produto = p.sku;
+                const tab = mapMovementToTab(m.type);
+                const tipo = m.type;
+                const qty = m.qty ?? 0;
+                const note = m.note || '';
+                rows.push({ date, month: currentMonth, produto, tab, tipo, qty, note, by: m.by || '', uid: m.uid || '' });
+            });
+        });
+
+        // Orders & Shipments logs (ORDER / SHIP / RECEIVED)
+        (logs || []).forEach(l => {
+            const date = l.arrivalDate || l.date || '';
+            const produto = l.sku || '';
+            const tab = 'Orders & Shipments';
+            const tipo = l.status || '';
+            const qty = (l.status === 'RECEIVED') ? (l.receivedQty ?? l.qty ?? 0) : (l.qty ?? 0);
+            const note = l.status === 'RECEIVED' ? 'Arrival: ' + (l.arrivalDate || '') : '';
+            rows.push({ date, month: currentMonth, produto, tab, tipo, qty, note, by: l.by || '', uid: l.uid || '' });
+        });
+
+        // sort
+        rows.sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.produto||'').localeCompare(b.produto||''));
+        return rows;
+    }
+
+    function ensureMovTabOptions() {
+        const sel = document.getElementById('movTab');
+        if (!sel) return;
+        const current = sel.value || 'all';
+        const tabs = Array.from(new Set(getAllMovementsBase().map(r => r.tab).filter(Boolean)))
+            .sort((a,b)=>a.localeCompare(b));
+        sel.innerHTML = `<option value="all">All</option>` + tabs.map(t => {
+            const safe = (t || '').toString().replace(/"/g, '&quot;');
+            return `<option value="${safe}">${t}</option>`;
+        }).join('');
+        sel.value = tabs.includes(current) ? current : 'all';
+    }
+
+    function getAllMovementsFiltered() {
+        const from = document.getElementById('movFrom')?.value || '';
+        const to = document.getElementById('movTo')?.value || '';
+        const q = (document.getElementById('movSearch')?.value || '').trim().toLowerCase();
+        const tabFilter = document.getElementById('movTab')?.value || 'all';
+
+        let rows = getAllMovementsBase();
+
+        // filters
+        if (from) rows = rows.filter(r => r.date && r.date >= from);
+        if (to) rows = rows.filter(r => r.date && r.date <= to);
+        if (q) rows = rows.filter(r => (r.produto || '').toLowerCase().includes(q));
+        if (tabFilter && tabFilter !== 'all') rows = rows.filter(r => r.tab === tabFilter);
+
+        return rows;
+    }
+
+    function renderMovements() {
+        ensureMovTabOptions();
+        const head = document.getElementById('movHead');
+        const body = document.getElementById('movBody');
+        const summary = document.getElementById('movementsSummary');
+        if (!head || !body || !summary) return; // tab not in DOM yet
+
+        const view = document.getElementById('movView')?.value || 'detailed';
+        const rows = getAllMovementsFiltered();
+
+        if (view === 'daily') {
+            head.innerHTML = `<tr>
+                <th>Date</th><th>Movements (count)</th><th>Total Qty (sum)</th>
+            </tr>`;
+            const byDay = {};
+            rows.forEach(r => {
+                const d = r.date || 'NO-DATE';
+                byDay[d] = byDay[d] || { date: d, count: 0, total: 0 };
+                byDay[d].count += 1;
+                byDay[d].total += Number(r.qty||0);
+            });
+            const days = Object.values(byDay).sort((a,b)=>a.date.localeCompare(b.date));
+            body.innerHTML = days.map(d => `<tr>
+                <td>${d.date}</td><td>${d.count}</td><td>${d.total}</td>
+            </tr>`).join('');
+            summary.innerHTML = `<b>Total records:</b> ${rows.length} &nbsp; | &nbsp; <b>Days:</b> ${days.length}`;
+        } else {
+            head.innerHTML = `<tr>
+                <th>Date</th><th>Produto</th><th>Separador</th><th>Tipo</th><th>Qty</th><th>By</th><th>Nota</th>
+            </tr>`;
+            body.innerHTML = rows.map(r => `<tr>
+                <td>${r.date || ''}</td>
+                <td>${r.produto || ''}</td>
+                <td>${r.tab || ''}</td>
+                <td>${r.tipo || ''}</td>
+                <td>${r.qty ?? ''}</td>
+                <td>${(r.by || '').toString()}</td>
+                <td>${(r.note || '').toString()}</td>
+            </tr>`).join('');
+            summary.innerHTML = `<b>Total records:</b> ${rows.length}`;
+        }
+    }
+
+    function exportMovementsCSV() {
+        const rows = getAllMovementsFiltered();
+        if (!rows.length) return alert('No movements to export for this filter.');
+        const headers = ['month','date','produto','tab','tipo','qty','by','note'];
+        downloadCSV(headers, rows, `movements_${currentMonth}.csv`);
+    }
+
+    function exportMovementsXLSX() {
+        const rows = getAllMovementsFiltered();
+        if (!rows.length) return alert('No movements to export for this filter.');
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Movements");
+        XLSX.writeFile(wb, `movements_${currentMonth}.xlsx`);
+    }
+
+function exportWarehouseCSV() {
+        if (!warehouseItems.length) { alert('No warehouse data to export.'); return; }
+        const headers = ['produto','posicao','dimensoes','peso','volume'];
+        const rows = warehouseItems.map(r => ({
+            produto: r.produto || '',
+            posicao: r.posicao || '',
+            dimensoes: r.dimensoes || '',
+            peso: r.peso || '',
+            volume: r.volume || ''
+        }));
+        downloadCSV(headers, rows, `warehouse_master_${new Date().toISOString().slice(0,10)}.csv`);
+    }
+
 </script>
 </body>
 </html>
