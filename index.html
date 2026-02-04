@@ -610,12 +610,9 @@
 
     // ---- Master Product List (Warehouse upload) ----
     function masterSkuLines() {
-        const lines = (warehouseItems || [])
+        return (warehouseItems || [])
             .map(r => (r?.produto ?? '').toString().trim())
             .filter(Boolean);
-        const normal = lines.filter(s => !isWarrantySku(s));
-        const warranty = lines.filter(s => isWarrantySku(s));
-        return normal.concat(warranty);
     }
 
     function parseSkuLine(line) {
@@ -893,12 +890,7 @@
                                 .reduce((a,c)=>a + (Number(c.qty)||0), 0);
             const transit = transitCurrent + transitPrev;
             return { sku: p.sku, real: Number(real)||0, amsped: Number(amsped)||0, transit: Number(transit)||0 };
-        }).sort((a,b) => {
-            const aw = isWarrantySku(a.sku), bw = isWarrantySku(b.sku);
-            if (aw && !bw) return 1;
-            if (!aw && bw) return -1;
-            return (a.real - b.real) || a.sku.localeCompare(b.sku, undefined, {numeric:true});
-        });
+        }).sort((a,b) => (a.real - b.real) || a.sku.localeCompare(b.sku, undefined, {numeric:true}));
     }
 
     function queueSaveGeneralView(immediate=false) {
@@ -1056,23 +1048,9 @@
         setDates(); updateDatalist(); renderGeneral(); renderOrderInventory(); renderShipments(); renderManagement(); renderMiniDash(); renderRecentLogs(); renderWarehouse(); renderMovements();
     }
 
-    
-    function isWarrantySku(sku) {
-        return (sku || '').trim().toUpperCase() === 'WARRANTY PT' || (sku || '').trim().toUpperCase() === 'WARRANTY ES';
-    }
-
-    function sortSkusWithWarrantyLast(list) {
-        const arr = (list || []).slice();
-        const normal = arr.filter(p => !isWarrantySku(p.sku));
-        const warranty = arr.filter(p => isWarrantySku(p.sku));
-        normal.sort((a,b) => (a.sku||'').localeCompare(b.sku||''));
-        warranty.sort((a,b) => (a.sku||'').localeCompare(b.sku||''));
-        return normal.concat(warranty);
-    }
-
-function updateDatalist() {
+    function updateDatalist() {
         const dl = document.getElementById('productList'); dl.innerHTML = '';
-        sortSkusWithWarrantyLast(products).forEach(p => dl.innerHTML += `<option value="${p.sku}">${p.sku}</option>`);
+        products.forEach(p => dl.innerHTML += `<option value="${p.sku}">${p.sku}</option>`);
     }
 
     function qtyClass(v) {
@@ -1106,12 +1084,7 @@ function updateDatalist() {
                 real: Number(it.real) || 0,
                 amsped: Number(it.amsped) || 0,
                 transit: Number(it.transit) || 0
-            })).sort((a,b) => {
-                const aw = isWarrantySku(a.sku), bw = isWarrantySku(b.sku);
-                if (aw && !bw) return 1;
-                if (!aw && bw) return -1;
-                return (a.real - b.real) || String(a.sku).localeCompare(String(b.sku), undefined, {numeric:true});
-            });
+            })).sort((a,b) => (a.real - b.real) || String(a.sku).localeCompare(String(b.sku), undefined, {numeric:true}));
         } else {
             rows = buildGeneralViewItems();
         }
@@ -1234,28 +1207,17 @@ function updateDatalist() {
         // Sort by date desc then product
         combined.sort((a,b) => (b.date||'').localeCompare(a.date||'') || (a.sku||'').localeCompare(b.sku||''));
 
-        const today = new Date().toISOString().split('T')[0];
-
         combined.forEach((l) => {
             const isPrev = l.__source === 'prev';
             const statusLabel = isPrev ? 'SENT (prev)' : l.status;
             const badgeClass = (l.status || '').toLowerCase();
 
-            const key = (isPrev ? `p_${l.__fromMonth}_${l.id}` : `c_${l.__idx}`);
-            let arrivalCell = `${l.arrivalDate || '-'}`;
             let acts = '';
-
             if (l.status === 'SENT') {
-                // Inline receive controls (no prompts)
-                arrivalCell = `<div style="display:flex; gap:6px; align-items:center;">
-                        <input type="number" min="0" id="recQty_${key}" class="input-single" style="width:80px" placeholder="Qty" value="${l.qty}">
-                        <input type="date" id="recDate_${key}" class="input-single" style="width:140px" value="${today}">
-                    </div>`;
-
                 if (isPrev) {
-                    acts += `<button class="btn btn-success" onclick="receivePrevSentInline('${l.__fromMonth}', ${l.id}, '${key}')">Receive</button> `;
+                    acts += `<button class="btn btn-success" onclick="receivePrevSent('${l.__fromMonth}', ${l.id})">Receive</button> `;
                 } else {
-                    acts += `<button class="btn btn-success" onclick="receiveLogInline(${l.__idx}, '${key}')">Receive</button> `;
+                    acts += `<button class="btn btn-success" onclick="receiveLog(${l.__idx})">Receive</button> `;
                 }
             }
 
@@ -1271,85 +1233,33 @@ function updateDatalist() {
                 <td>${l.sku}</td>
                 <td><span class="badge bg-${badgeClass}">${statusLabel}</span></td>
                 <td>${l.qty}</td>
-                <td>${arrivalCell}</td>
+                <td>${l.arrivalDate || '-'}</td>
                 <td>${(l.note||'-')}</td>
                 <td>${acts}</td>
             </tr>`;
         });
     }
 
-    // Inline handlers for Receive (avoid browser prompts)
-    async function receivePrevSentInline(fromMonth, sourceId, key) {
-        const qtyEl = document.getElementById(`recQty_${key}`);
-        const dateEl = document.getElementById(`recDate_${key}`);
-        const qty = parseInt(qtyEl?.value || '0', 10);
-        const date = (dateEl?.value || '').trim();
-        if (isNaN(qty) || qty <= 0) return alert('Qtd recebida inválida.');
-        if (!date) return alert('Data inválida.');
-        await receivePrevSent(fromMonth, sourceId, qty, date);
-    }
-
-    async function receiveLogInline(idx, key) {
-        const qtyEl = document.getElementById(`recQty_${key}`);
-        const dateEl = document.getElementById(`recDate_${key}`);
-        const qty = parseInt(qtyEl?.value || '0', 10);
-        const date = (dateEl?.value || '').trim();
-        if (isNaN(qty) || qty <= 0) return alert('Qtd recebida inválida.');
-        if (!date) return alert('Data inválida.');
-        await receiveLog(idx, qty, date);
-    }
-
-    async function receivePrevSent(fromMonth, sourceId, qty, date) {
+    async function receivePrevSent(fromMonth, sourceId) {
         // Receive a SENT that was created in a previous month:
-        // - Keep the original month as historical,
+        // - Keep the original log as SENT (historical),
         // - Create RECEIVED in the CURRENT month (so inventory increases in the month received),
-        // - Mark/update the source month SENT so it remains open only for the remaining qty.
+        // - Mark the original as receivedInMonth to avoid showing it again as "open".
         const src = (openSentLogs || []).find(x => x.fromMonth === fromMonth && x.id === sourceId);
         if (!src) return alert('Shipment not found (maybe already received).');
 
-        const q = parseInt(qty, 10);
-        if (isNaN(q) || q <= 0) return alert('Qtd recebida inválida.');
-        if (!date) return alert('Data inválida.');
+        const qty = parseInt(prompt("Confirmed Qty Received:", src.qty));
+        const date = prompt("Arrival Date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
+        if (isNaN(qty) || !date) return;
 
-        // Add RECEIVED movement in current month
+        // Create a RECEIVED movement in the CURRENT month
         const p = findProd(src.sku);
-        if (!p) {
+        if (p) {
+            p.movements.push({ type: 'RECEIVED', qty, date, logId: sourceId, by: currentActorEmail(), uid: currentActorUid() });
+        } else {
             alert('Produto não encontrado no mês atual. Confirma se existe no Warehouse master.');
             return;
         }
-        p.movements.push({ type: 'RECEIVED', qty: q, date, logId: sourceId, by: currentActorEmail(), uid: currentActorUid() });
-
-        // Add a RECEIVED log in current month for tracking/exports
-        logs.push({
-            date,
-            sku: src.sku,
-            qty: q,
-            status: 'RECEIVED',
-            id: Date.now(),
-            arrivalDate: date,
-            receivedQty: q,
-            sourceMonth: fromMonth,
-            sourceId: sourceId,
-            note: src.note || '',
-            by: currentActorEmail(),
-            uid: currentActorUid()
-        });
-
-        // Update source month SENT: partial or full
-        const sentQty = parseInt(src.qty, 10);
-        if (!isNaN(sentQty) && q < sentQty) {
-            const remaining = sentQty - q;
-            await updateSourceSentRemaining(fromMonth, sourceId, remaining, currentMonth, date, q);
-        } else {
-            await markSourceSentAsReceived(fromMonth, sourceId, currentMonth, date, q);
-        }
-
-        // Refresh open list + save
-        await loadOpenSentLogsFromPreviousMonths();
-        save();
-        renderAll();
-    }
-
 
         // Add a RECEIVED log in current month for tracking/exports
         logs.push({
@@ -1419,60 +1329,24 @@ function updateDatalist() {
         if(textEl) textEl.value = "";
     }
 
-    async function receiveLog(idx, qtyRec, date) {
+    function receiveLog(idx) {
         const src = logs[idx];
         if (!src) return;
         if (src.status !== 'SENT') return;
+        const qtyRec = parseInt(prompt("Confirmed Qty Received:", src.qty));
+        const date = prompt("Arrival Date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
+        if (isNaN(qtyRec) || !date) return;
 
-        const q = parseInt(qtyRec, 10);
-        if (isNaN(q) || q <= 0) return alert('Qtd recebida inválida.');
-        if (!date) return alert('Data inválida.');
-
-        const sentQty = parseInt(src.qty, 10);
+        const sentQty = parseInt(src.qty);
         if (isNaN(sentQty) || sentQty <= 0) return;
-        if (q > sentQty) return alert("Qty received cannot be higher than Qty SENT.");
+
+        if (qtyRec > sentQty) return alert("Qty received cannot be higher than Qty SENT.");
 
         // Add RECEIVED movement (inventory increases in this month)
         const p = findProd(src.sku);
         if (p) {
-            p.movements.push({ type: 'RECEIVED', qty: q, date, logId: src.id, by: currentActorEmail(), uid: currentActorUid() });
+            p.movements.push({ type: 'RECEIVED', qty: qtyRec, date, logId: src.id, by: currentActorEmail(), uid: currentActorUid() });
         }
-
-        // Create a RECEIVED log entry (keeps trace + exports)
-        logs.push({
-            date,
-            sku: src.sku,
-            qty: q,
-            status: 'RECEIVED',
-            id: Date.now(),
-            arrivalDate: date,
-            receivedQty: q,
-            sourceMonth: currentMonth,
-            sourceId: src.id,
-            note: src.note || '',
-            by: currentActorEmail(),
-            uid: currentActorUid()
-        });
-
-        const remaining = sentQty - q;
-
-        if (remaining > 0) {
-            // Keep the original as SENT with the remaining qty (so you can receive later)
-            src.qty = remaining;
-            src.partialReceipts = Array.isArray(src.partialReceipts) ? src.partialReceipts : [];
-            src.partialReceipts.push({ month: currentMonth, date, qty: q, by: currentActorEmail(), uid: currentActorUid() });
-        } else {
-            // Fully received -> close original SENT
-            src.status = 'SENT_CLOSED';
-            src.receivedInMonth = currentMonth;
-            src.closedAt = date;
-            src.closedBy = currentActorEmail();
-        }
-
-        save();
-        renderAll();
-    }
-
 
         // Create a RECEIVED log entry (keeps trace + exports)
         logs.push({
@@ -1541,7 +1415,7 @@ function updateDatalist() {
 
     function renderManagement() {
         const bodyM = document.getElementById('bodyManagement'); bodyM.innerHTML = '';
-        sortSkusWithWarrantyLast(products).forEach((p, i) => {
+        products.forEach((p, i) => {
             bodyM.innerHTML += `<tr><td>${p.sku}</td><td><input type="number" class="input-single" style="width:40px" value="${p.initial}" onchange="products[${i}].initial=parseInt(this.value);save();renderAll()"></td><td>${sum(p,'RECEIVED')}</td><td>${sum(p,'adjust')}</td><td>${sum(p,'picking')}</td><td>${sum(p,'amsped')}</td><td>${sum(p,'b2b')}</td><td><button onclick="showHistory(${i})">📜</button></td></tr>`;
         });
     }
