@@ -566,6 +566,12 @@
 
     // --- Helpers: case-insensitive matching + bulk line parsing (supports product names with spaces) ---
     function normKey(v) { return (v || '').toString().trim().toLowerCase(); }
+    const WARRANTY_KEYS = ['warranty pt', 'warranty es'];
+    function isWarrantySku(sku){
+        const k = normKey(sku);
+        return WARRANTY_KEYS.includes(k);
+    }
+
     function findProd(input) { const k = normKey(input); return products.find(p => normKey(p.sku) === k); }
     function parseBulkLine(line) {
         const parts = (line || '').toString().trim().split(/\s+/);
@@ -890,7 +896,12 @@
                                 .reduce((a,c)=>a + (Number(c.qty)||0), 0);
             const transit = transitCurrent + transitPrev;
             return { sku: p.sku, real: Number(real)||0, amsped: Number(amsped)||0, transit: Number(transit)||0 };
-        }).sort((a,b) => (a.real - b.real) || a.sku.localeCompare(b.sku, undefined, {numeric:true}));
+        }).sort((a,b) => {
+            const aw = isWarrantySku(a.sku), bw = isWarrantySku(b.sku);
+            if (aw && !bw) return 1;
+            if (!aw && bw) return -1;
+            return (a.real - b.real) || a.sku.localeCompare(b.sku, undefined, {numeric:true});
+        });
     }
 
     function queueSaveGeneralView(immediate=false) {
@@ -1084,7 +1095,12 @@
                 real: Number(it.real) || 0,
                 amsped: Number(it.amsped) || 0,
                 transit: Number(it.transit) || 0
-            })).sort((a,b) => (a.real - b.real) || String(a.sku).localeCompare(String(b.sku), undefined, {numeric:true}));
+            })).sort((a,b) => {
+                const aw = isWarrantySku(a.sku), bw = isWarrantySku(b.sku);
+                if (aw && !bw) return 1;
+                if (!aw && bw) return -1;
+                return (a.real - b.real) || String(a.sku).localeCompare(String(b.sku), undefined, {numeric:true});
+            });
         } else {
             rows = buildGeneralViewItems();
         }
@@ -1099,14 +1115,28 @@
         }
 
 
-        rows.forEach(({sku, real, amsped, transit}) => {
+        const normalRows = (rows || []).filter(r => !isWarrantySku(r.sku));
+        const warrantyRows = (rows || []).filter(r => isWarrantySku(r.sku));
+
+        const renderRow = ({sku, real, amsped, transit}) => {
             bodyG.innerHTML += `<tr>
                 <td><b>${sku}</b></td>
                 <td class="stock-val real-col">${qtyCell(real)}</td>
                 <td class="stock-val amsped-col">${qtyCell(amsped)}</td>
                 <td class="transit-val">${(transit||0)}</td>
             </tr>`;
-        });
+        };
+
+        normalRows.forEach(renderRow);
+
+        if (warrantyRows.length){
+            bodyG.innerHTML += `<tr>
+                <td colspan="4" style="padding:10px; background:#f8f9fa; border-top:2px solid #e9ecef; font-weight:700;">
+                    WARRANTY (sempre no fim)
+                </td>
+            </tr>`;
+            warrantyRows.forEach(renderRow);
+        }
     }
 
 
@@ -1133,13 +1163,20 @@
         // 1. Urgent items first (most negative coverage first)
         // 2. Others by lowest real stock
         prioritized.sort((a, b) => {
+            const aw = isWarrantySku(a.p.sku), bw = isWarrantySku(b.p.sku);
+            if (aw && !bw) return 1;
+            if (!aw && bw) return -1;
+
             if (a.isUrgent && !b.isUrgent) return -1;
             if (!a.isUrgent && b.isUrgent) return 1;
             if (a.isUrgent && b.isUrgent) return a.coverage - b.coverage;
             return a.real - b.real;
         });
 
-        prioritized.forEach(item => {
+        const normalItems = prioritized.filter(it => !isWarrantySku(it.p.sku));
+        const warrantyItems = prioritized.filter(it => isWarrantySku(it.p.sku));
+
+        const renderItem = (item) => {
             const rowClass = item.isUrgent ? 'urgent-row' : '';
             body.innerHTML += `<tr class="${rowClass}">
                 <td><b>${item.p.sku}</b></td>
@@ -1149,7 +1186,18 @@
                 <td class="confirm-col">${item.toConf || '-'}</td>
                 <td class="order-col">${item.ord || '-'}</td>
             </tr>`;
-        });
+        };
+
+        normalItems.forEach(renderItem);
+
+        if (warrantyItems.length){
+            body.innerHTML += `<tr>
+                <td colspan="6" style="padding:10px; background:#f8f9fa; border-top:2px solid #e9ecef; font-weight:700;">
+                    WARRANTY (sempre no fim)
+                </td>
+            </tr>`;
+            warrantyItems.forEach(renderItem);
+        }
     }
 
     function updateToConfirm(mode) {
