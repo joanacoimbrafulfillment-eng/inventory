@@ -893,7 +893,12 @@
                                 .reduce((a,c)=>a + (Number(c.qty)||0), 0);
             const transit = transitCurrent + transitPrev;
             return { sku: p.sku, real: Number(real)||0, amsped: Number(amsped)||0, transit: Number(transit)||0 };
-        }).sort((a,b) => (a.real - b.real) || a.sku.localeCompare(b.sku, undefined, {numeric:true}));
+        }).sort((a,b) => {
+            const aw = isWarrantySku(a.sku), bw = isWarrantySku(b.sku);
+            if (aw && !bw) return 1;
+            if (!aw && bw) return -1;
+            return (a.real - b.real) || a.sku.localeCompare(b.sku, undefined, {numeric:true});
+        });
     }
 
     function queueSaveGeneralView(immediate=false) {
@@ -1101,7 +1106,12 @@ function updateDatalist() {
                 real: Number(it.real) || 0,
                 amsped: Number(it.amsped) || 0,
                 transit: Number(it.transit) || 0
-            })).sort((a,b) => (a.real - b.real) || String(a.sku).localeCompare(String(b.sku), undefined, {numeric:true}));
+            })).sort((a,b) => {
+                const aw = isWarrantySku(a.sku), bw = isWarrantySku(b.sku);
+                if (aw && !bw) return 1;
+                if (!aw && bw) return -1;
+                return (a.real - b.real) || String(a.sku).localeCompare(String(b.sku), undefined, {numeric:true});
+            });
         } else {
             rows = buildGeneralViewItems();
         }
@@ -1115,11 +1125,6 @@ function updateDatalist() {
             return;
         }
 
-
-        // Keep WARRANTY PT/ES always at the end (they are not real products and often go negative)
-        const w = rows.filter(r => isWarrantySku(r.sku));
-        const nw = rows.filter(r => !isWarrantySku(r.sku));
-        rows = nw.concat(w);
 
         rows.forEach(({sku, real, amsped, transit}) => {
             bodyG.innerHTML += `<tr>
