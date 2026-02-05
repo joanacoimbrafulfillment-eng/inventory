@@ -181,7 +181,6 @@
 
                 <div style="margin-left:auto; display:flex; gap:10px;">
                     <button class="btn btn-excel" onclick="exportAnalyticsCSV()">⬇️ Export Analytics (CSV)</button>
-                    <button class="btn btn-excel" onclick="exportCoverageTimelineCSV()">📅 Export Coverage Timeline (CSV)</button>
                 </div>
             </div>
 
@@ -1181,11 +1180,7 @@
         let prioritized = products.map(p => {
             const real = calculateStock(p, 'real', logs);
             const amsped = calculateStock(p, 'amsped', logs);
-            const sentCurrent = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT' && (!l.receivedInMonth || String(l.receivedInMonth).localeCompare(String(currentMonth)) > 0))
-                                .reduce((a,c)=>a + (Number(c.qty)||0), 0);
-            const sentPrev = (openSentLogs || []).filter(l => normKey(l.sku) === normKey(p.sku))
-                                .reduce((a,c)=>a + (Number(c.qty)||0), 0);
-            const sent = sentCurrent + sentPrev;
+            const sent = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT').reduce((a,c)=>a+c.qty,0);
             const ord = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'ORDER').reduce((a,c)=>a+c.qty,0);
             const toConf = p.toConfirm || 0;
             
@@ -1675,9 +1670,14 @@
     async function ensureAnalyticsMonthOptions(){
         const sel = document.getElementById('analyticsMonth');
         if (!sel) return;
+
+        // Preserve user selection before repopulating options
+        const prev = sel.value;
+
         const ids = await getAllMonthIdsSorted();
         sel.innerHTML = (ids || []).map(m => `<option value="${m}">${m}</option>`).join('');
-        const wanted = sel.value || currentMonth;
+
+        const wanted = prev || currentMonth;
         if ((ids || []).includes(wanted)) sel.value = wanted;
         else if ((ids || []).includes(currentMonth)) sel.value = currentMonth;
         else sel.value = (ids && ids.length) ? ids[ids.length-1] : currentMonth;
@@ -1762,8 +1762,7 @@
 
             const rows = [...pickingRows, ...topSold, ...topReturns, ...procurementRows];
 
-            const csvBody = Papa.unparse(rows, { quotes: true, delimiter: ';', newline: '\r\n' });
-            const csv = '\ufeffsep=;\r\n' + csvBody;
+            const csv = Papa.unparse(rows, { quotes: true });
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -1779,118 +1778,7 @@
         }
     }
 
-    
-    async function exportCoverageTimelineCSV(){
-        try{
-            if (!window.fb) return alert('Firebase not ready.');
-
-            const mode = document.getElementById('analyticsMode')?.value || 'month';
-            if (mode === 'month') await ensureAnalyticsMonthOptions();
-            if (mode === 'year') await ensureAnalyticsYearOptions();
-
-            const months = await getMonthsForMode(); // [{id,data}]
-            const periodLabel =
-                (mode === 'month') ? (months[0]?.id || '') :
-                (mode === 'year') ? (document.getElementById('analyticsYear')?.value || '') :
-                'ALL';
-
-            // skuKey -> bucket
-            const acc = new Map(); 
-            function bucketForSku(sku){
-                const k = normKey(sku || '');
-                if(!k) return null;
-                if(!acc.has(k)){
-                    acc.set(k, {
-                        sku: sku || '',
-                        ordered: 0, sent: 0, received: 0,
-                        orderByDate: new Map(),
-                        sentByDate: new Map(),
-                        recvByDate: new Map()
-                    });
-                }
-                return acc.get(k);
-            }
-            function addDateQty(map, dateStr, qty){
-                if(!dateStr) return;
-                const d = String(dateStr);
-                map.set(d, (map.get(d) || 0) + Number(qty || 0));
-            }
-            function fmtDateMap(map){
-                // "YYYY-MM-DD(qty) | YYYY-MM-DD(qty)"
-                const arr = Array.from(map.entries())
-                    .sort((a,b)=>String(a[0]).localeCompare(String(b[0])))
-                    .map(([d,q]) => `${d}(${q})`);
-                return arr.join(' | ');
-            }
-
-            months.forEach(({data}) => {
-                const logsArr = data?.logs || [];
-                const prods = data?.products || [];
-
-                // ORDER / SENT dates from logs
-                logsArr.forEach(l => {
-                    const sku = l?.sku || '';
-                    const b = bucketForSku(sku);
-                    if(!b) return;
-                    const qty = Number(l?.qty || 0);
-                    const dt = l?.date || '';
-                    if (l.status === 'ORDER') { b.ordered += qty; addDateQty(b.orderByDate, dt, qty); }
-                    if (l.status === 'SENT')  { b.sent    += qty; addDateQty(b.sentByDate, dt, qty); }
-                });
-
-                // RECEIVED dates from movements
-                prods.forEach(p => {
-                    const sku = p?.sku || '';
-                    const b = bucketForSku(sku);
-                    if(!b) return;
-                    (p.movements || []).forEach(m => {
-                        if(m?.type !== 'RECEIVED') return;
-                        const qty = Number(m?.qty || 0);
-                        const dt = m?.date || '';
-                        b.received += qty;
-                        addDateQty(b.recvByDate, dt, qty);
-                    });
-                });
-            });
-
-            const rows = Array.from(acc.values())
-                .map(r => {
-                    const gap = Number(r.ordered||0) - (Number(r.sent||0) + Number(r.received||0));
-                    return {
-                        sku: r.sku,
-                        ordered: Number(r.ordered||0),
-                        sent: Number(r.sent||0),
-                        received: Number(r.received||0),
-                        gap,
-                        order_dates: fmtDateMap(r.orderByDate),
-                        sent_dates: fmtDateMap(r.sentByDate),
-                        received_dates: fmtDateMap(r.recvByDate),
-                        period: periodLabel
-                    };
-                })
-                .filter(r => r.gap > 0)
-                .sort((a,b)=> b.gap - a.gap);
-
-            if(!rows.length) return alert('Sem produtos com gap > 0 neste período.');
-
-            const csvBody = Papa.unparse(rows, { quotes: true, delimiter: ';', newline: '\r\n' });
-            const csv = '\ufeffsep=;\r\n' + csvBody;
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Coverage_Timeline_${mode}_${periodLabel}_${new Date().toISOString().slice(0,10)}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-        } catch(e){
-            console.error(e);
-            alert('Falha ao exportar Coverage Timeline CSV.');
-        }
-    }
-
-async function renderAnalytics() {
+    async function renderAnalytics() {
         Object.values(charts).forEach(c => { if(c) c.destroy(); });
         if (!window.fb) return;
 
