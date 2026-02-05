@@ -1755,10 +1755,32 @@
                 return { dataset: 'procurement_coverage', period: periodLabel, sku: r.sku, ordered, sent, received, gap };
             }).sort((a,b)=> b.gap - a.gap);
 
+            // Build a single flat dataset list (different datasets have different columns)
             const rows = [...pickingRows, ...topSold, ...topReturns, ...procurementRows];
 
-            const csv = Papa.unparse(rows, { quotes: true });
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            // Excel-friendly CSV:
+            // - use ";" as delimiter
+            // - add "sep=;" hint on first line
+            // - add UTF-8 BOM + CRLF so Excel (PT) opens in columns with accents
+            const headers = ['dataset','period','label','sku','ordered','sent','received','gap','qty'];
+            const delim = ';';
+            const esc = (v) => {
+                const s = (v ?? '').toString();
+                const needs = s.includes('"') || s.includes('\n') || s.includes('\r') || s.includes(delim);
+                const out = s.replace(/"/g,'""');
+                return needs ? `"${out}"` : out;
+            };
+
+            const lines = [];
+            lines.push(`sep=${delim}`);
+            lines.push(headers.join(delim));
+            rows.forEach(r => {
+                lines.push(headers.map(h => esc(r[h])).join(delim));
+            });
+
+            const bom = "\ufeff";
+            const csvText = bom + lines.join("\r\n");
+            const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
