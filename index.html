@@ -1181,7 +1181,11 @@
         let prioritized = products.map(p => {
             const real = calculateStock(p, 'real', logs);
             const amsped = calculateStock(p, 'amsped', logs);
-            const sent = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT').reduce((a,c)=>a+c.qty,0);
+            const sentCurrent = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT' && (!l.receivedInMonth || String(l.receivedInMonth).localeCompare(String(currentMonth)) > 0))
+                                .reduce((a,c)=>a + (Number(c.qty)||0), 0);
+            const sentPrev = (openSentLogs || []).filter(l => normKey(l.sku) === normKey(p.sku))
+                                .reduce((a,c)=>a + (Number(c.qty)||0), 0);
+            const sent = sentCurrent + sentPrev;
             const ord = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'ORDER').reduce((a,c)=>a+c.qty,0);
             const toConf = p.toConfirm || 0;
             
