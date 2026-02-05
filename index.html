@@ -171,40 +171,23 @@
 
                 <div id="analyticsMonthWrap">
                     <label style="font-size:12px;color:#666;">Mês (Analytics)</label><br>
-                    <select id="analyticsMonth" class="input-single" onchange="renderAnalytics()"></select>
+                    <input type="month" id="analyticsMonth" class="input-single" onchange="renderAnalytics()">
                 </div>
 
                 <div id="analyticsYearWrap">
                     <label style="font-size:12px;color:#666;">Ano</label><br>
                     <select id="analyticsYear" class="input-single" onchange="renderAnalytics()"></select>
                 </div>
-
-                <div style="margin-left:auto; display:flex; gap:10px;">
-                    <button class="btn btn-excel" onclick="exportAnalyticsCSV()">⬇️ Export Analytics (CSV)</button>
-                </div>
             </div>
-
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
                 <div style="grid-column: span 2; height: 350px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Daily Picking Activity</h3><canvas id="dailyChart"></canvas></div>
                 <div style="height: 300px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Top Sold</h3><canvas id="topSoldChart"></canvas></div>
                 <div style="height: 300px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Returns</h3><canvas id="returnsChart"></canvas></div>
                 <div class="section-box" style="grid-column: span 2;">
-                    <h3>📦 Procurement Coverage (ORDER vs SENT vs RECEIVED)</h3>
-                    <p style="margin-top:-6px;color:#666;font-size:12px;">Ordenado por: <b>Ordered - (Sent + Received)</b>. Mostra apenas SKUs com valor &gt; 0.</p>
-                    <table id="disTable">
-                        <thead>
-                            <tr>
-                                <th>SKU</th>
-                                <th>Ordered</th>
-                                <th>Sent</th>
-                                <th>Received</th>
-                                <th style="color:red">Ordered - (Sent+Received)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="bodyDiscrepancies"></tbody>
-                    </table>
+                    <h3>🚩 Procurement Coverage (ORDER vs SENT vs RECEIVED)</h3>
+                    <table id="disTable"><thead><tr><th>SKU</th><th>Ordered</th><th>Sent</th><th>Received</th><th style="color:#e67e22">Missing Sent</th><th style="color:#e74c3c">Missing Received</th></tr></thead><tbody id="bodyDiscrepancies"></tbody></table>
                 </div>
-                </div>
+</div>
             </div>
         </div>
 
@@ -711,6 +694,8 @@
 
     async function changeMonth() {
         currentMonth = document.getElementById('monthPicker').value;
+        const am = document.getElementById('analyticsMonth');
+        if (am && !am.value) am.value = currentMonth;
         if (userRole === 'pl') {
             startGeneralRealtime();
         } else {
@@ -1610,7 +1595,7 @@
         const mode = document.getElementById('analyticsMode')?.value || 'month';
 
         if (mode === 'month') {
-            const mid = document.getElementById('analyticsMonth')?.value || currentMonth;
+            const mid = getAnalyticsSelectedMonthId();
             const data = allData[mid] || await getMonthDoc(mid);
             return [{ id: mid, data }];
         }
@@ -1670,112 +1655,7 @@
         const years = Array.from(new Set(ids.map(m => String(m).slice(0,4)))).sort();
         const curY = String(new Date().getFullYear());
         sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
-        sel.value = years.includes(curY) ? curY : (years[years.len
-    async function ensureAnalyticsMonthOptions(){
-        const sel = document.getElementById('analyticsMonth');
-        if (!sel) return;
-        const ids = await getAllMonthIdsSorted();
-        sel.innerHTML = (ids || []).map(m => `<option value="${m}">${m}</option>`).join('');
-        // default: keep current selection if possible, otherwise use currentMonth, otherwise last available
-        const wanted = sel.value || currentMonth;
-        if (ids.includes(wanted)) sel.value = wanted;
-        else if (ids.includes(currentMonth)) sel.value = currentMonth;
-        else sel.value = ids[ids.length-1] || currentMonth;
-    }
-
-    async function exportAnalyticsCSV(){
-        try{
-            if (!window.fb) return alert('Firebase not ready.');
-
-            const mode = document.getElementById('analyticsMode')?.value || 'month';
-            if (mode === 'month') await ensureAnalyticsMonthOptions();
-            if (mode === 'year') await ensureAnalyticsYearOptions();
-
-            const months = await getMonthsForMode(); // [{id,data}]
-            const periodLabel = (mode === 'month') ? (months[0]?.id || '') : (mode === 'year' ? (document.getElementById('analyticsYear')?.value || '') : 'ALL');
-
-            // Dataset 1: picking series (daily for month, monthly otherwise)
-            let pickingRows = [];
-            if (mode === 'month') {
-                const monthId = months[0]?.id;
-                const monthDoc = months[0]?.data || { products: [] };
-                const days = Array.from({length: 31}, (_, i) => String(i + 1).padStart(2, '0'));
-                days.forEach(d => {
-                    const ds = `${monthId}-${d}`;
-                    const qty = (monthDoc.products || []).reduce((acc, p) => {
-                        const v = (p.movements || []).filter(m => m.date === ds && m.type === 'picking')
-                            .reduce((a,c)=>a + Number(c.qty||0), 0);
-                        return acc + v;
-                    }, 0);
-                    pickingRows.push({ dataset: 'picking_series', period: periodLabel, label: ds, qty });
-                });
-            } else {
-                months.forEach(({id,data}) => {
-                    const qty = sumMovementsFromMonthDoc(data, 'picking');
-                    pickingRows.push({ dataset: 'picking_series', period: periodLabel, label: id, qty });
-                });
-            }
-
-            // Dataset 2/3: top sold + returns (top 50 for export)
-            const topSold = rankSkuAcrossMonths(months, 'amsped', 50).map(x => ({
-                dataset: 'top_sold_amsped', period: periodLabel, sku: x.sku, qty: x.q
-            }));
-            const topReturns = rankSkuAcrossMonths(months, 'returns', 50).map(x => ({
-                dataset: 'top_returns', period: periodLabel, sku: x.sku, qty: x.q
-            }));
-
-            // Dataset 4: Procurement coverage (ALL rows, incl gap <= 0)
-            const acc = new Map(); // normSku -> {sku, ordered, sent, received}
-            months.forEach(({data}) => {
-                const logsArr = data?.logs || [];
-                const prods = data?.products || [];
-
-                logsArr.forEach(l => {
-                    const sku = l?.sku || '';
-                    if (!sku) return;
-                    const k = normKey(sku);
-                    if (!acc.has(k)) acc.set(k, { sku, ordered:0, sent:0, received:0 });
-                    const row = acc.get(k);
-                    if (l.status === 'ORDER') row.ordered += Number(l.qty||0);
-                    if (l.status === 'SENT')  row.sent    += Number(l.qty||0);
-                });
-
-                prods.forEach(p => {
-                    const k = normKey(p.sku);
-                    if (!acc.has(k)) acc.set(k, { sku: p.sku, ordered:0, sent:0, received:0 });
-                    const row = acc.get(k);
-                    row.received += (p.movements || []).filter(m => m.type === 'RECEIVED')
-                        .reduce((a,c)=>a + Number(c.qty||0), 0);
-                });
-            });
-
-            const procurementRows = Array.from(acc.values()).map(r => {
-                const ordered = Number(r.ordered||0);
-                const sent = Number(r.sent||0);
-                const received = Number(r.received||0);
-                const gap = ordered - (sent + received);
-                return { dataset: 'procurement_coverage', period: periodLabel, sku: r.sku, ordered, sent, received, gap };
-            }).sort((a,b)=> b.gap - a.gap);
-
-            // Consolidate into a single CSV (dataset column keeps it understandable)
-            const rows = [...pickingRows, ...topSold, ...topReturns, ...procurementRows];
-
-            const csv = Papa.unparse(rows, { quotes: true });
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Analytics_${mode}_${periodLabel}_${new Date().toISOString().slice(0,10)}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-        } catch(e){
-            console.error(e);
-            alert('Falha ao exportar Analytics CSV.');
-        }
-    }
-gth-1] || curY);
+        sel.value = years.includes(curY) ? curY : (years[years.length-1] || curY);
     }
 
     async function renderAnalytics() {
@@ -1783,28 +1663,23 @@ gth-1] || curY);
         if (!window.fb) return;
 
         const mode = document.getElementById('analyticsMode')?.value || 'month';
-
-        // UI: month selector is independent from top picker
-        const monthWrap = document.getElementById('analyticsMonthWrap');
-        const yearWrap = document.getElementById('analyticsYearWrap');
-        if (monthWrap) monthWrap.style.display = (mode === 'month') ? 'block' : 'none';
-        if (yearWrap) yearWrap.style.display = (mode === 'year') ? 'block' : 'none';
-        if (mode === 'month') await ensureAnalyticsMonthOptions();
-        if (mode !== 'month') await ensureAnalyticsYearOptions();
+        updateAnalyticsControls();
+        if (mode === 'year') await ensureAnalyticsYearOptions();
 
         const months = await getMonthsForMode(); // [{id,data}]
+        const monthIdForMonthMode = months[0]?.id || getAnalyticsSelectedMonthId();
         const monthDoc = months[0]?.data || { products: [], logs: [] };
 
-        // Keep legacy globals consistent for other UI parts if needed
-        products = monthDoc.products || [];
-        logs = monthDoc.logs || [];
+        // IMPORTANT: Analytics must NOT mutate the global month state used by other tabs.
+        const monthProducts = monthDoc.products || [];
+        const monthLogs = monthDoc.logs || [];
 
         // --- Chart 1: Picking activity ---
         if (mode === 'month') {
             const days = Array.from({length: 31}, (_, i) => String(i + 1).padStart(2, '0'));
             const pickingData = days.map(d => {
-                const ds = `${months[0].id}-${d}`;
-                return (products || []).reduce((acc, p) =>
+                const ds = `${monthIdForMonthMode}-${d}`;
+                return (monthProducts || []).reduce((acc, p) =>
                     acc + (p.movements || []).filter(m => m.date === ds && m.type === 'picking').reduce((a,c)=>a+Number(c.qty||0),0),
                 0);
             });
@@ -1840,7 +1715,7 @@ gth-1] || curY);
             options: { indexAxis: 'y', maintainAspectRatio: false }
         });
 
-        // --- Procurement Coverage (ORDER vs SENT vs RECEIVED) ---
+        // --- Procurement gaps (ORDER vs RECEIVED) + (ORDER vs SENT) ---
         const body = document.getElementById('bodyDiscrepancies');
         if (body) body.innerHTML = '';
 
@@ -1850,7 +1725,6 @@ gth-1] || curY);
             const logsArr = data?.logs || [];
             const prods = data?.products || [];
 
-            // ORDER / SENT from logs
             logsArr.forEach(l => {
                 const sku = l?.sku || '';
                 if (!sku) return;
@@ -1861,7 +1735,6 @@ gth-1] || curY);
                 if (l.status === 'SENT')  row.sent    += Number(l.qty||0);
             });
 
-            // RECEIVED from movements
             prods.forEach(p => {
                 const k = normKey(p.sku);
                 if (!acc.has(k)) acc.set(k, { sku: p.sku, ordered:0, sent:0, received:0 });
@@ -1871,27 +1744,32 @@ gth-1] || curY);
             });
         });
 
-        const rows = Array.from(acc.values())
-            .map(r => {
-                const ordered = Number(r.ordered||0);
-                const sent = Number(r.sent||0);
-                const received = Number(r.received||0);
-                const gap = ordered - (sent + received);
-                return { sku: r.sku, ordered, sent, received, gap };
-            })
-            .filter(r => r.gap > 0)
-            .sort((a,b) => b.gap - a.gap);
-
         if (body) {
-            rows.forEach(r => {
-                body.innerHTML += `<tr>
-                    <td>${r.sku}</td>
-                    <td>${r.ordered}</td>
-                    <td>${r.sent}</td>
-                    <td>${r.received}</td>
-                    <td style="color:red;font-weight:bold">${r.gap}</td>
-                </tr>`;
-            });
+            Array.from(acc.values())
+                .map(r => {
+                    const ordered = Number(r.ordered||0);
+                    const sent = Number(r.sent||0);
+                    const received = Number(r.received||0);
+                    return {
+                        sku: r.sku,
+                        ordered, sent, received,
+                        missSent: Math.max(0, ordered - sent),
+                        missReceived: Math.max(0, ordered - received)
+                    };
+                })
+                // show anything not fully covered (either not fully sent or not fully received)
+                .filter(r => r.missSent > 0 || r.missReceived > 0)
+                .sort((a,b)=> Math.max(b.missSent, b.missReceived) - Math.max(a.missSent, a.missReceived))
+                .forEach(r => {
+                    body.innerHTML += `<tr>
+                        <td>${r.sku}</td>
+                        <td>${r.ordered}</td>
+                        <td>${r.sent}</td>
+                        <td>${r.received}</td>
+                        <td style="color:#e67e22;font-weight:bold">${r.missSent}</td>
+                        <td style="color:#e74c3c;font-weight:bold">${r.missReceived}</td>
+                    </tr>`;
+                });
         }
 
     }
@@ -1901,7 +1779,13 @@ gth-1] || curY);
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.getElementById(id).classList.add('active');
         event.currentTarget.classList.add('active');
-        if(id === 'analytics') setTimeout(async () => { await ensureAnalyticsYearOptions(); await ensureAnalyticsMonthOptions(); renderAnalytics(); }, 50); else renderAll();
+        if(id === 'analytics') setTimeout(async () => {
+            const am = document.getElementById('analyticsMonth');
+            if (am && !am.value) am.value = currentMonth;
+            updateAnalyticsControls();
+            if ((document.getElementById('analyticsMode')?.value || 'month') === 'year') await ensureAnalyticsYearOptions();
+            renderAnalytics();
+        }, 50); else renderAll();
     }
 
     function setDates() {
@@ -1956,6 +1840,22 @@ function processBulkFromSelect(id) {
     save(); renderAll();
     textEl.value = "";
 }
+
+    function updateAnalyticsControls(){
+        const mode = document.getElementById('analyticsMode')?.value || 'month';
+        const mw = document.getElementById('analyticsMonthWrap');
+        const yw = document.getElementById('analyticsYearWrap');
+        if (mw) mw.style.display = (mode === 'month') ? '' : 'none';
+        if (yw) yw.style.display = (mode === 'year') ? '' : 'none';
+    }
+
+
+    function getAnalyticsSelectedMonthId(){
+        // Analytics can analyze a different month than the top monthPicker.
+        const v = document.getElementById('analyticsMonth')?.value;
+        return (v && String(v).trim()) ? String(v).trim() : String(currentMonth || '');
+    }
+
 
 
     function showHistory(i) {
