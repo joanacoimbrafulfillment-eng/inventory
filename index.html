@@ -163,30 +163,31 @@
                 <div>
                     <label style="font-size:12px;color:#666;">Período</label><br>
                     <select id="analyticsMode" class="input-single" onchange="renderAnalytics()">
-                        <option value="month">Mês (selecionado no topo)</option>
+                        <option value="month">Mês</option>
                         <option value="year">Ano</option>
                         <option value="all">Tudo</option>
                     </select>
                 </div>
-                <div>
+
+                <div id="analyticsMonthWrap">
+                    <label style="font-size:12px;color:#666;">Mês (Analytics)</label><br>
+                    <input type="month" id="analyticsMonth" class="input-single" onchange="renderAnalytics()">
+                </div>
+
+                <div id="analyticsYearWrap">
                     <label style="font-size:12px;color:#666;">Ano</label><br>
                     <select id="analyticsYear" class="input-single" onchange="renderAnalytics()"></select>
                 </div>
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
                 <div style="grid-column: span 2; height: 350px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Daily Picking Activity</h3><canvas id="dailyChart"></canvas></div>
                 <div style="height: 300px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Top Sold</h3><canvas id="topSoldChart"></canvas></div>
                 <div style="height: 300px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Returns</h3><canvas id="returnsChart"></canvas></div>
                 <div class="section-box" style="grid-column: span 2;">
-                    <h3>🚩 Procurement Gaps</h3>
-                    <table id="disTable"><thead><tr><th>SKU</th><th>Ordered</th><th>Received</th><th style="color:red">Missing</th></tr></thead><tbody id="bodyDiscrepancies"></tbody></table>
+                    <h3>🚩 Procurement Coverage (ORDER vs SENT vs RECEIVED)</h3>
+                    <table id="disTable"><thead><tr><th>SKU</th><th>Ordered</th><th>Sent</th><th>Received</th><th style="color:#e67e22">Missing Sent</th><th style="color:#e74c3c">Missing Received</th></tr></thead><tbody id="bodyDiscrepancies"></tbody></table>
                 </div>
-
-                <div class="section-box" style="grid-column: span 2;">
-                    <h3>🚩 Procurement Gaps (ORDER → SENT)</h3>
-                    <table><thead><tr><th>SKU</th><th>Ordered</th><th>Sent</th><th style="color:red">Not Sent</th></tr></thead><tbody id="bodyOrderSentGaps"></tbody></table>
-                </div>
-                </div>
+</div>
             </div>
         </div>
 
@@ -693,6 +694,8 @@
 
     async function changeMonth() {
         currentMonth = document.getElementById('monthPicker').value;
+        const am = document.getElementById('analyticsMonth');
+        if (am && !am.value) am.value = currentMonth;
         if (userRole === 'pl') {
             startGeneralRealtime();
         } else {
@@ -1592,8 +1595,9 @@
         const mode = document.getElementById('analyticsMode')?.value || 'month';
 
         if (mode === 'month') {
-            const data = allData[currentMonth] || await getMonthDoc(currentMonth);
-            return [{ id: currentMonth, data }];
+            const mid = getAnalyticsSelectedMonthId();
+            const data = allData[mid] || await getMonthDoc(mid);
+            return [{ id: mid, data }];
         }
 
         const ids = await getAllMonthIdsSorted();
@@ -1654,46 +1658,28 @@
         sel.value = years.includes(curY) ? curY : (years[years.length-1] || curY);
     }
 
-    function renderOrderVsSentGaps(accMap){
-        const body2 = document.getElementById('bodyOrderSentGaps');
-        if (!body2) return;
-        body2.innerHTML = '';
-
-        const rows = Array.from(accMap.values())
-            .filter(r => (r.ordered || 0) > (r.sent || 0))
-            .map(r => ({ ...r, missing: (Number(r.ordered||0) - Number(r.sent||0)) }))
-            .sort((a,b)=> b.missing - a.missing);
-
-        rows.forEach(r => {
-            body2.innerHTML += `<tr>
-                <td>${r.sku}</td>
-                <td>${r.ordered}</td>
-                <td>${r.sent}</td>
-                <td style="color:red;font-weight:bold">${r.missing}</td>
-            </tr>`;
-        });
-    }
-
     async function renderAnalytics() {
         Object.values(charts).forEach(c => { if(c) c.destroy(); });
         if (!window.fb) return;
 
         const mode = document.getElementById('analyticsMode')?.value || 'month';
-        if (mode !== 'month') await ensureAnalyticsYearOptions();
+        updateAnalyticsControls();
+        if (mode === 'year') await ensureAnalyticsYearOptions();
 
         const months = await getMonthsForMode(); // [{id,data}]
+        const monthIdForMonthMode = months[0]?.id || getAnalyticsSelectedMonthId();
         const monthDoc = months[0]?.data || { products: [], logs: [] };
 
-        // Keep legacy globals consistent for other UI parts if needed
-        products = monthDoc.products || [];
-        logs = monthDoc.logs || [];
+        // IMPORTANT: Analytics must NOT mutate the global month state used by other tabs.
+        const monthProducts = monthDoc.products || [];
+        const monthLogs = monthDoc.logs || [];
 
         // --- Chart 1: Picking activity ---
         if (mode === 'month') {
             const days = Array.from({length: 31}, (_, i) => String(i + 1).padStart(2, '0'));
             const pickingData = days.map(d => {
-                const ds = `${currentMonth}-${d}`;
-                return (products || []).reduce((acc, p) =>
+                const ds = `${monthIdForMonthMode}-${d}`;
+                return (monthProducts || []).reduce((acc, p) =>
                     acc + (p.movements || []).filter(m => m.date === ds && m.type === 'picking').reduce((a,c)=>a+Number(c.qty||0),0),
                 0);
             });
@@ -1760,14 +1746,32 @@
 
         if (body) {
             Array.from(acc.values())
-                .filter(r => Number(r.ordered||0) > Number(r.received||0))
-                .sort((a,b)=> (Number(b.ordered||0)-Number(b.received||0)) - (Number(a.ordered||0)-Number(a.received||0)))
+                .map(r => {
+                    const ordered = Number(r.ordered||0);
+                    const sent = Number(r.sent||0);
+                    const received = Number(r.received||0);
+                    return {
+                        sku: r.sku,
+                        ordered, sent, received,
+                        missSent: Math.max(0, ordered - sent),
+                        missReceived: Math.max(0, ordered - received)
+                    };
+                })
+                // show anything not fully covered (either not fully sent or not fully received)
+                .filter(r => r.missSent > 0 || r.missReceived > 0)
+                .sort((a,b)=> Math.max(b.missSent, b.missReceived) - Math.max(a.missSent, a.missReceived))
                 .forEach(r => {
-                    body.innerHTML += `<tr><td>${r.sku}</td><td>${r.ordered}</td><td>${r.received}</td><td style="color:red;font-weight:bold">${Number(r.ordered||0)-Number(r.received||0)}</td></tr>`;
+                    body.innerHTML += `<tr>
+                        <td>${r.sku}</td>
+                        <td>${r.ordered}</td>
+                        <td>${r.sent}</td>
+                        <td>${r.received}</td>
+                        <td style="color:#e67e22;font-weight:bold">${r.missSent}</td>
+                        <td style="color:#e74c3c;font-weight:bold">${r.missReceived}</td>
+                    </tr>`;
                 });
         }
 
-        renderOrderVsSentGaps(acc);
     }
 
     function openTab(id) {
@@ -1775,7 +1779,13 @@
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.getElementById(id).classList.add('active');
         event.currentTarget.classList.add('active');
-        if(id === 'analytics') setTimeout(async () => { await ensureAnalyticsYearOptions(); renderAnalytics(); }, 50); else renderAll();
+        if(id === 'analytics') setTimeout(async () => {
+            const am = document.getElementById('analyticsMonth');
+            if (am && !am.value) am.value = currentMonth;
+            updateAnalyticsControls();
+            if ((document.getElementById('analyticsMode')?.value || 'month') === 'year') await ensureAnalyticsYearOptions();
+            renderAnalytics();
+        }, 50); else renderAll();
     }
 
     function setDates() {
@@ -1830,6 +1840,22 @@ function processBulkFromSelect(id) {
     save(); renderAll();
     textEl.value = "";
 }
+
+    function updateAnalyticsControls(){
+        const mode = document.getElementById('analyticsMode')?.value || 'month';
+        const mw = document.getElementById('analyticsMonthWrap');
+        const yw = document.getElementById('analyticsYearWrap');
+        if (mw) mw.style.display = (mode === 'month') ? '' : 'none';
+        if (yw) yw.style.display = (mode === 'year') ? '' : 'none';
+    }
+
+
+    function getAnalyticsSelectedMonthId(){
+        // Analytics can analyze a different month than the top monthPicker.
+        const v = document.getElementById('analyticsMonth')?.value;
+        return (v && String(v).trim()) ? String(v).trim() : String(currentMonth || '');
+    }
+
 
 
     function showHistory(i) {
