@@ -188,6 +188,7 @@
 
         <!-- 3. ORDERS & SHIPMENTS (PRIORITY SORTING v44) -->
         
+        
         <!-- 2B. ANALYSIS+ -->
         <div id="analysisPlus" class="tab-content">
             <div class="section-box" style="border-left:5px solid #007bff;">
@@ -196,8 +197,8 @@
                     <div>
                         <label style="font-weight:700;">View</label><br>
                         <select id="apMode" class="input-single" onchange="renderAnalysisPlus()">
-                            <option value="month">Month (mês atual)</option>
-                            <option value="year">Year (soma de meses)</option>
+                            <option value="month">Month (mês selecionado)</option>
+                            <option value="year">Year (soma dos meses)</option>
                         </select>
                     </div>
                     <div>
@@ -215,36 +216,85 @@
             </div>
 
             <div class="section-box">
-                <h4 style="margin-top:0;">Summary (totais)</h4>
-                <table>
-                    <thead><tr><th>Categoria</th><th>Tipo/Estado</th><th>Total Qty</th></tr></thead>
-                    <tbody id="apSummaryBody"></tbody>
-                </table>
+                <h4 style="margin-top:0;">KPIs rápidos</h4>
+                <div id="apKpis" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:14px;"></div>
             </div>
 
             <div class="section-box">
-                <h4 style="margin-top:0;">By Product (Net impact no Real Stock)</h4>
-                <div style="font-size:12px; color:#666;">
-                    Net Real Δ = + RECEIVED/returns/recovered/adjust(+) ; - amsped/b2b/picking/internal/adjust(-).  
-                    (SENT não mexe no stock; RECEIVED sim.)
+                <h4 style="margin-top:0;">Top / Bottom produtos (intuitivo)</h4>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:18px;">
+                    <div class="section-box" style="margin:0;">
+                        <b>Picking (mais vendidos)</b>
+                        <div style="height:320px;"><canvas id="apChartPickingTop"></canvas></div>
+                    </div>
+                    <div class="section-box" style="margin:0;">
+                        <b>Picking (menos vendidos — exclui 0)</b>
+                        <div style="height:320px;"><canvas id="apChartPickingBottom"></canvas></div>
+                    </div>
+
+                    <div class="section-box" style="margin:0;">
+                        <b>Amsped Sales (mais vendidos)</b>
+                        <div style="height:320px;"><canvas id="apChartAmspedTop"></canvas></div>
+                    </div>
+                    <div class="section-box" style="margin:0;">
+                        <b>Amsped Sales (menos vendidos — exclui 0)</b>
+                        <div style="height:320px;"><canvas id="apChartAmspedBottom"></canvas></div>
+                    </div>
+
+                    <div class="section-box" style="margin:0;">
+                        <b>Returns (mais)</b>
+                        <div style="height:320px;"><canvas id="apChartReturnsTop"></canvas></div>
+                    </div>
+                    <div class="section-box" style="margin:0;">
+                        <b>Recovered (mais)</b>
+                        <div style="height:320px;"><canvas id="apChartRecoveredTop"></canvas></div>
+                    </div>
                 </div>
-                <div class="entry-row" style="margin-top:10px;">
-                    <input id="apSearch" class="input-single" style="width:280px;" placeholder="Search product..." onkeyup="renderAnalysisPlusTablesOnly()">
+                <div style="font-size:12px; color:#666; margin-top:10px;">
+                    “Bottom” mostra os menores valores <b>acima de 0</b> (para não encher de zeros).
+                </div>
+            </div>
+
+            <div class="section-box">
+                <h4 style="margin-top:0;">Procurement Gaps (produtos com falta)</h4>
+                <div style="font-size:12px; color:#666;">
+                    Gap = max(0, <code>toConfirm</code> - (<code>Real Stock</code> + <code>SENT</code>)).  
+                    No modo Year, soma gaps de cada mês do ano (quando existirem dados).
+                </div>
+                <div style="height:340px; margin-top:10px;"><canvas id="apChartGaps"></canvas></div>
+            </div>
+
+            <div class="section-box">
+                <h4 style="margin-top:0;">Tabelas (para export)</h4>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                    <input id="apSearch" class="input-single" style="width:320px;" placeholder="Search product..." onkeyup="renderAnalysisPlusTablesOnly()">
                     <button class="btn" onclick="document.getElementById('apSearch').value='';renderAnalysisPlusTablesOnly()">Clear</button>
                 </div>
-                <div style="overflow-x:auto;">
+
+                <div style="margin-top:12px;">
+                    <b>Summary</b>
+                    <table>
+                        <thead><tr><th>Categoria</th><th>Tipo/Estado</th><th>Total Qty</th></tr></thead>
+                        <tbody id="apSummaryBody"></tbody>
+                    </table>
+                </div>
+
+                <div style="margin-top:14px; overflow-x:auto;">
+                    <b>By Product</b>
                     <table>
                         <thead>
                             <tr>
                                 <th>Produto</th>
                                 <th>Net Real Δ</th>
-                                <th>Received</th>
-                                <th>Returns/Recovered</th>
-                                <th>Adjust</th>
                                 <th>Picking</th>
-                                <th>Internal</th>
                                 <th>Amsped</th>
+                                <th>Returns</th>
+                                <th>Recovered</th>
+                                <th>Received</th>
+                                <th>Adjust</th>
+                                <th>Internal</th>
                                 <th>B2B</th>
+                                <th>Gap</th>
                             </tr>
                         </thead>
                         <tbody id="apProductBody"></tbody>
@@ -252,9 +302,7 @@
                 </div>
             </div>
         </div>
-
-
-        <div id="shipments" class="tab-content">
+<div id="shipments" class="tab-content">
             <div class="split-layout">
                 <!-- Left: Support Table Sorted by Procurement Priority -->
                 <div class="split-side-left">
@@ -2222,224 +2270,291 @@ function exportWarehouseCSV() {
         const headers = Object.keys(rows[0] || {});
         downloadCSV(headers, rows, `analytics_${currentMonth}.csv`);
     }
-
-    // =============================
-    // ANALYSIS+ (new tab): Month/Year aggregation + exports
-    // =============================
-    let analysisPlusCache = { mode: 'month', year: '', months: [], summary: [], byProduct: [] };
-
-    function getYearsFromMonths(monthIds) {
-        const years = new Set();
-        (monthIds || []).forEach(id => {
-            const y = String(id || '').slice(0,4);
-            if (/^\d{4}$/.test(y)) years.add(y);
-        });
-        return Array.from(years).sort((a,b)=>b.localeCompare(a));
+);
+        const tag = (analysisPlusCache.mode === 'year') ? analysisPlusCache.year : currentMonth;
+        downloadCSV(headers, rows, `analysis_plus_${tag}.csv`);
     }
 
-    async function listAllMonthIds() {
-        // from Firestore months collection (authoritative)
-        if (!window.fb) return [];
+
+
+
+    // =============================
+    // ANALYSIS+ (new tab): Month/Year + charts + exports
+    // =============================
+    let apCharts = {};
+    let analysisPlusCache = { mode: 'month', year: '', months: [], summary: [], byProduct: [], gapsTop: [] };
+
+    function apDestroyCharts(){
+        Object.values(apCharts).forEach(ch => { try { ch.destroy(); } catch(e){} });
+        apCharts = {};
+    }
+
+    function apTopN(mapObj, n=10){
+        const rows = Object.entries(mapObj || {}).map(([k,v])=>({sku:k, qty:Number(v)||0}));
+        rows.sort((a,b)=>b.qty-a.qty);
+        return rows.slice(0,n);
+    }
+    function apBottomPositive(mapObj, n=10){
+        const rows = Object.entries(mapObj || {}).map(([k,v])=>({sku:k, qty:Number(v)||0})).filter(r=>r.qty>0);
+        rows.sort((a,b)=>a.qty-b.qty);
+        return rows.slice(0,n);
+    }
+
+    function apRenderBar(canvasId, title, rows){
+        const el = document.getElementById(canvasId);
+        if(!el) return;
+        const labels = (rows||[]).map(r=>r.sku);
+        const data = (rows||[]).map(r=>r.qty);
+        apCharts[canvasId] = new Chart(el.getContext('2d'), {
+            type: 'bar',
+            data: { labels, datasets: [{ label: title, data }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, title: { display: true, text: title } },
+                scales: { x: { ticks: { autoSkip: false, maxRotation: 60, minRotation: 30 } } }
+            }
+        });
+    }
+
+    async function apListAllMonthIds(){
         try {
             const ids = await window.fb.listDocIds('months');
-            return (ids || []).filter(x => /^\d{4}-\d{2}$/.test(String(x))).sort();
+            return (ids || []).filter(id => /^\d{4}-\d{2}$/.test(String(id))).sort();
         } catch(e) {
-            console.warn('listDocIds(months) failed', e);
             return [];
         }
     }
 
-    function ensureAPYearOptions(monthIds) {
-        const sel = document.getElementById('apYear');
-        if (!sel) return;
-        const years = getYearsFromMonths(monthIds);
-        const curY = String(currentMonth || '').slice(0,4);
-        sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
-        if (years.includes(curY)) sel.value = curY;
-        else if (years.length) sel.value = years[0];
+    function apYearsFromIds(ids){
+        const years = new Set();
+        (ids||[]).forEach(id=>{
+            const y=String(id).slice(0,4);
+            if(/^\d{4}$/.test(y)) years.add(y);
+        });
+        return Array.from(years).sort((a,b)=>b.localeCompare(a));
     }
 
-    function emptyAgg() {
+    function apEnsureYearOptions(ids){
+        const sel = document.getElementById('apYear');
+        if(!sel) return;
+        const years = apYearsFromIds(ids);
+        const curY = String(currentMonth||'').slice(0,4);
+        sel.innerHTML = years.map(y=>`<option value="${y}">${y}</option>`).join('');
+        if(years.includes(curY)) sel.value = curY;
+        else if(years.length) sel.value = years[0];
+    }
+
+    function apEmptyAgg(){
         return {
-            totalsByType: {},
-            shipSent: 0,
-            shipReceived: 0,
-            byProduct: {} // normKey -> row
+            picking:{}, amsped:{}, returns:{}, recovered:{}, received:{}, adjust:{}, internal:{}, b2b:{},
+            sent:{}, toConfirm:{}, real:{}, gap:{},
+            totals:{}
         };
     }
 
-    function addProdRow(agg, sku) {
+    function apAdd(map, sku, qty){ 
+        const k = String(sku||'').trim();
+        if(!k) return;
+        map[k] = (map[k]||0) + (Number(qty)||0);
+    }
+
+    function apCalcRealFromMovements(prod){
+        const init = Number(prod.initial ?? prod.init ?? 0);
+        let real = init;
+        (prod.movements||[]).forEach(m=>{
+            const t=String(m.type||'').toLowerCase();
+            const q=Math.abs(Number(m.qty)||0);
+            if(t==='received' || t==='returns' || t==='refunds' || t==='recovered' || t==='adjust') real += q;
+            if(t==='picking' || t==='customercare' || t==='awards' || t==='officeneeds' || t==='amsped' || t==='b2b') real -= q;
+        });
+        return real;
+    }
+
+    function apTransitFromLogs(logsArr, sku){
         const k = normKey(sku);
-        if (!agg.byProduct[k]) {
-            agg.byProduct[k] = {
-                produto: sku,
-                received: 0,
-                returns: 0,
-                adjust: 0,
-                picking: 0,
-                internal: 0,
-                amsped: 0,
-                b2b: 0,
-                net: 0
-            };
-        }
-        return agg.byProduct[k];
+        return (logsArr||[]).filter(l=>String(l.tab||'')==='orders' && String(l.status||'').toUpperCase()==='SENT' && normKey(l.sku)===k)
+            .reduce((a,c)=>a + Number(c.remaining ?? c.qty ?? 0), 0);
     }
 
-    function addTypeTotal(agg, t, qty) {
-        const key = String(t || '');
-        agg.totalsByType[key] = (agg.totalsByType[key] || 0) + (Number(qty) || 0);
-    }
+    function apAggregateFromMonthData(monthData){
+        const agg = apEmptyAgg();
+        const prods = Array.isArray(monthData?.products) ? monthData.products : [];
+        const logsArr = Array.isArray(monthData?.logs) ? monthData.logs : [];
 
-    function applyMovement(agg, sku, type, qty) {
-        const q = Number(qty) || 0;
-        const t = String(type || '');
-        addTypeTotal(agg, t, q);
-
-        const row = addProdRow(agg, sku);
-        const tl = t.toLowerCase();
-
-        if (tl === 'received') { row.received += q; row.net += q; return; }
-        if (tl === 'returns' || tl === 'refunds' || tl === 'recovered') { row.returns += q; row.net += q; return; }
-        if (tl === 'adjust') { row.adjust += q; row.net += q; return; }
-
-        if (tl === 'picking') { row.picking += q; row.net -= q; return; }
-        if (tl === 'b2b') { row.b2b += q; row.net -= q; return; }
-        if (tl === 'amsped') { row.amsped += q; row.net -= q; return; }
-        if (tl === 'customercare' || tl === 'awards' || tl === 'officeneeds') { row.internal += q; row.net -= q; return; }
-    }
-
-    function aggregateMonthFromData(monthId, data) {
-        const agg = emptyAgg();
-        const prods = Array.isArray(data?.products) ? data.products : [];
-        prods.forEach(p => {
+        prods.forEach(p=>{
             const sku = p.sku || p.product || '';
-            (p.movements || []).forEach(m => applyMovement(agg, sku, m.type, m.qty));
+            // movements totals
+            (p.movements||[]).forEach(m=>{
+                const t = String(m.type||'').toLowerCase();
+                const q = Math.abs(Number(m.qty)||0);
+                agg.totals[t] = (agg.totals[t]||0) + q;
+
+                if(t==='picking') apAdd(agg.picking, sku, q);
+                if(t==='amsped') apAdd(agg.amsped, sku, q);
+                if(t==='returns' || t==='refunds') apAdd(agg.returns, sku, q);
+                if(t==='recovered') apAdd(agg.recovered, sku, q);
+                if(t==='received') apAdd(agg.received, sku, q);
+                if(t==='adjust') apAdd(agg.adjust, sku, q);
+                if(t==='b2b') apAdd(agg.b2b, sku, q);
+                if(t==='customercare' || t==='awards' || t==='officeneeds') apAdd(agg.internal, sku, q);
+            });
+
+            // procurement gap (per product)
+            const real = apCalcRealFromMovements(p) + (logsArr||[]).filter(l=>String(l.tab||'')==='orders' && String(l.status||'').toUpperCase()==='RECEIVED' && normKey(l.sku)===normKey(sku))
+                .reduce((a,c)=>a + Number(c.qty||0), 0);
+            const sent = apTransitFromLogs(logsArr, sku);
+            const toConf = Number(p.toConfirm ?? 0);
+
+            apAdd(agg.real, sku, real);
+            apAdd(agg.sent, sku, sent);
+            apAdd(agg.toConfirm, sku, toConf);
+
+            const gap = Math.max(0, toConf - (real + sent));
+            apAdd(agg.gap, sku, gap);
         });
 
-        const monthLogs = Array.isArray(data?.logs) ? data.logs : [];
-        monthLogs.forEach(l => {
-            const st = String(l.status || '').toUpperCase();
-            const q = Number(l.qty) || 0;
-            if (st === 'SENT') agg.shipSent += q;
-            if (st === 'RECEIVED') agg.shipReceived += q;
-            addTypeTotal(agg, st, q);
+        logsArr.forEach(l=>{
+            const st = String(l.status||'').toUpperCase();
+            const q = Math.abs(Number(l.qty)||0);
+            agg.totals[st] = (agg.totals[st]||0) + q;
         });
 
         return agg;
     }
 
-    async function aggregateYear(year, monthIds) {
-        const ids = (monthIds || []).filter(id => String(id).startsWith(year + '-')).sort();
-        const agg = emptyAgg();
-        for (const mid of ids) {
+    async function apAggregateYear(year, monthIds){
+        const ids = (monthIds||[]).filter(id=>String(id).startsWith(year+'-')).sort();
+        const agg = apEmptyAgg();
+        for(const mid of ids){
             const data = await window.fb.getDocData(['months', mid]);
-            if (!data) continue;
-            const mAgg = aggregateMonthFromData(mid, data);
+            if(!data) continue;
+            const mAgg = apAggregateFromMonthData(data);
 
-            // merge totals
-            Object.entries(mAgg.totalsByType).forEach(([k,v]) => {
-                agg.totalsByType[k] = (agg.totalsByType[k] || 0) + (Number(v) || 0);
-            });
-            agg.shipSent += mAgg.shipSent;
-            agg.shipReceived += mAgg.shipReceived;
-
-            Object.values(mAgg.byProduct).forEach(r => {
-                const dst = addProdRow(agg, r.produto);
-                dst.received += r.received;
-                dst.returns += r.returns;
-                dst.adjust += r.adjust;
-                dst.picking += r.picking;
-                dst.internal += r.internal;
-                dst.amsped += r.amsped;
-                dst.b2b += r.b2b;
-                dst.net += r.net;
-            });
+            const mergeMap = (dst, src) => { Object.entries(src||{}).forEach(([k,v])=>dst[k]=(dst[k]||0)+Number(v||0)); };
+            mergeMap(agg.picking, mAgg.picking);
+            mergeMap(agg.amsped, mAgg.amsped);
+            mergeMap(agg.returns, mAgg.returns);
+            mergeMap(agg.recovered, mAgg.recovered);
+            mergeMap(agg.received, mAgg.received);
+            mergeMap(agg.adjust, mAgg.adjust);
+            mergeMap(agg.internal, mAgg.internal);
+            mergeMap(agg.b2b, mAgg.b2b);
+            mergeMap(agg.sent, mAgg.sent);
+            mergeMap(agg.toConfirm, mAgg.toConfirm);
+            mergeMap(agg.real, mAgg.real);
+            mergeMap(agg.gap, mAgg.gap);
+            mergeMap(agg.totals, mAgg.totals);
         }
         return { ids, agg };
     }
 
-    function buildSummaryRows(agg) {
-        const rows = [];
-        const keys = Object.keys(agg.totalsByType || {}).sort((a,b)=>a.localeCompare(b));
-        keys.forEach(k => rows.push({ categoria: 'Movements/Logs', tipo: k, total_qty: agg.totalsByType[k] }));
-        // Shipments quick totals
-        rows.push({ categoria: 'Shipments', tipo: 'SENT', total_qty: agg.shipSent });
-        rows.push({ categoria: 'Shipments', tipo: 'RECEIVED', total_qty: agg.shipReceived });
-        return rows;
+    function apBuildKpis(agg){
+        const sumMap = (m)=>Object.values(m||{}).reduce((a,c)=>a+Number(c||0),0);
+        return [
+            { label:'Picking total', value: sumMap(agg.picking) },
+            { label:'Amsped sales total', value: sumMap(agg.amsped) },
+            { label:'Returns total', value: sumMap(agg.returns) },
+            { label:'Recovered total', value: sumMap(agg.recovered) },
+            { label:'Total procurement gap', value: sumMap(agg.gap) },
+        ];
     }
 
-    function buildProductRows(agg) {
-        const rows = Object.values(agg.byProduct || {}).map(r => ({
-            produto: r.produto,
-            net_real_delta: r.net,
-            received: r.received,
-            returns_recovered: r.returns,
-            adjust: r.adjust,
-            picking: r.picking,
-            internal: r.internal,
-            amsped: r.amsped,
-            b2b: r.b2b
-        }));
-        // Keep WARRANTY at end
-        rows.sort((a,b)=>{
+    function apRenderKpis(kpis){
+        const box = document.getElementById('apKpis');
+        if(!box) return;
+        box.innerHTML = '';
+        (kpis||[]).forEach(k=>{
+            box.innerHTML += `
+              <div style="background:#fff; border:1px solid #eee; border-radius:10px; padding:12px;">
+                <div style="font-size:12px; color:#666; font-weight:700;">${k.label}</div>
+                <div style="font-size:26px; font-weight:900; margin-top:6px;">${k.value}</div>
+              </div>`;
+        });
+    }
+
+    function apBuildTables(agg){
+        const summary = Object.entries(agg.totals||{}).sort((a,b)=>String(a[0]).localeCompare(String(b[0])))
+            .map(([k,v])=>({categoria:'Movements/Logs', tipo:k, total_qty:Number(v||0)}));
+
+        const allSkus = new Set([
+            ...Object.keys(agg.picking||{}), ...Object.keys(agg.amsped||{}), ...Object.keys(agg.returns||{}), ...Object.keys(agg.recovered||{}),
+            ...Object.keys(agg.received||{}), ...Object.keys(agg.adjust||{}), ...Object.keys(agg.internal||{}), ...Object.keys(agg.b2b||{}),
+            ...Object.keys(agg.gap||{})
+        ]);
+
+        const byProduct = Array.from(allSkus).map(sku=>({
+            produto: sku,
+            net_real_delta: (Number(agg.received?.[sku]||0) + Number(agg.returns?.[sku]||0) + Number(agg.recovered?.[sku]||0) + Number(agg.adjust?.[sku]||0))
+                          - (Number(agg.picking?.[sku]||0) + Number(agg.internal?.[sku]||0) + Number(agg.amsped?.[sku]||0) + Number(agg.b2b?.[sku]||0)),
+            picking: Number(agg.picking?.[sku]||0),
+            amsped: Number(agg.amsped?.[sku]||0),
+            returns: Number(agg.returns?.[sku]||0),
+            recovered: Number(agg.recovered?.[sku]||0),
+            received: Number(agg.received?.[sku]||0),
+            adjust: Number(agg.adjust?.[sku]||0),
+            internal: Number(agg.internal?.[sku]||0),
+            b2b: Number(agg.b2b?.[sku]||0),
+            gap: Number(agg.gap?.[sku]||0),
+        })).sort((a,b)=>{
             const aw=isWarrantySku(a.produto), bw=isWarrantySku(b.produto);
-            if (aw && !bw) return 1;
-            if (!aw && bw) return -1;
+            if(aw && !bw) return 1;
+            if(!aw && bw) return -1;
             return (a.net_real_delta - b.net_real_delta) || String(a.produto).localeCompare(String(b.produto), undefined, {numeric:true});
         });
-        return rows;
+
+        return {summary, byProduct};
     }
 
-    function renderAnalysisPlusTablesOnly() {
+    function renderAnalysisPlusTablesOnly(){
         const q = (document.getElementById('apSearch')?.value || '').trim().toLowerCase();
         const sumBody = document.getElementById('apSummaryBody');
         const prodBody = document.getElementById('apProductBody');
-        if (!sumBody || !prodBody) return;
+        if(!sumBody || !prodBody) return;
 
         sumBody.innerHTML = '';
-        (analysisPlusCache.summary || []).forEach(r => {
+        (analysisPlusCache.summary || []).forEach(r=>{
             sumBody.innerHTML += `<tr><td>${r.categoria}</td><td>${r.tipo}</td><td>${r.total_qty}</td></tr>`;
         });
 
         const rows = (analysisPlusCache.byProduct || []).filter(r => !q || String(r.produto||'').toLowerCase().includes(q));
         prodBody.innerHTML = '';
-        rows.forEach(r => {
+        rows.forEach(r=>{
             prodBody.innerHTML += `<tr>
-                <td><b>${r.produto}</b></td>
-                <td>${r.net_real_delta}</td>
-                <td>${r.received}</td>
-                <td>${r.returns_recovered}</td>
-                <td>${r.adjust}</td>
-                <td>${r.picking}</td>
-                <td>${r.internal}</td>
-                <td>${r.amsped}</td>
-                <td>${r.b2b}</td>
+              <td><b>${r.produto}</b></td>
+              <td>${r.net_real_delta}</td>
+              <td>${r.picking}</td>
+              <td>${r.amsped}</td>
+              <td>${r.returns}</td>
+              <td>${r.recovered}</td>
+              <td>${r.received}</td>
+              <td>${r.adjust}</td>
+              <td>${r.internal}</td>
+              <td>${r.b2b}</td>
+              <td>${r.gap}</td>
             </tr>`;
         });
     }
 
-    async function renderAnalysisPlus() {
-        if (userRole === 'pl') {
-            alert('PL: Analysis+ não disponível.');
-            openTab('general');
-            return;
-        }
-        if (!window.fb) return alert('Firebase not ready.');
+    async function renderAnalysisPlus(){
+        if(userRole === 'pl'){ alert('PL: Analysis+ não disponível.'); openTab('general'); return; }
+        if(!window.fb) return alert('Firebase not ready.');
 
-        const monthIds = await listAllMonthIds();
-        ensureAPYearOptions(monthIds);
+        apDestroyCharts();
+
+        const monthIds = await apListAllMonthIds();
+        apEnsureYearOptions(monthIds);
 
         const mode = document.getElementById('apMode')?.value || 'month';
         const year = document.getElementById('apYear')?.value || String(currentMonth).slice(0,4);
 
         let agg = null;
         let usedMonths = [];
-        if (mode === 'month') {
-            agg = aggregateMonthFromData(currentMonth, { products, logs });
+        if(mode === 'month'){
+            agg = apAggregateFromMonthData({ products, logs });
             usedMonths = [currentMonth];
         } else {
-            const res = await aggregateYear(year, monthIds);
+            const res = await apAggregateYear(year, monthIds);
             agg = res.agg;
             usedMonths = res.ids;
         }
@@ -2448,29 +2563,43 @@ function exportWarehouseCSV() {
         analysisPlusCache.year = year;
         analysisPlusCache.months = usedMonths;
 
-        analysisPlusCache.summary = buildSummaryRows(agg);
-        analysisPlusCache.byProduct = buildProductRows(agg);
+        apRenderKpis(apBuildKpis(agg));
 
+        apRenderBar('apChartPickingTop', 'Picking (Top 10)', apTopN(agg.picking,10));
+        apRenderBar('apChartPickingBottom', 'Picking (Bottom 10 >0)', apBottomPositive(agg.picking,10));
+
+        apRenderBar('apChartAmspedTop', 'Amsped Sales (Top 10)', apTopN(agg.amsped,10));
+        apRenderBar('apChartAmspedBottom', 'Amsped Sales (Bottom 10 >0)', apBottomPositive(agg.amsped,10));
+
+        apRenderBar('apChartReturnsTop', 'Returns (Top 10)', apTopN(agg.returns,10));
+        apRenderBar('apChartRecoveredTop', 'Recovered (Top 10)', apTopN(agg.recovered,10));
+
+        const gapsTop = apTopN(agg.gap, 15);
+        analysisPlusCache.gapsTop = gapsTop;
+        apRenderBar('apChartGaps', 'Procurement Gaps (Top 15)', gapsTop);
+
+        const tables = apBuildTables(agg);
+        analysisPlusCache.summary = tables.summary;
+        analysisPlusCache.byProduct = tables.byProduct;
         renderAnalysisPlusTablesOnly();
     }
 
-    function exportAnalysisPlusXLSX() {
+    function exportAnalysisPlusXLSX(){
         const tag = (analysisPlusCache.mode === 'year') ? analysisPlusCache.year : currentMonth;
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(analysisPlusCache.summary || []), 'Summary');
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(analysisPlusCache.byProduct || []), 'ByProduct');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((analysisPlusCache.gapsTop || []).map(r=>({produto:r.sku, gap:r.qty}))), 'GapsTop');
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet((analysisPlusCache.months || []).map(m=>({month:m}))), 'MonthsUsed');
         XLSX.writeFile(wb, `analysis_plus_${tag}.xlsx`);
     }
-
-    function exportAnalysisPlusCSV() {
+    function exportAnalysisPlusCSV(){
         const rows = analysisPlusCache.byProduct || [];
-        if (!rows.length) return alert('Sem dados para export.');
+        if(!rows.length) return alert('Sem dados para export.');
         const headers = Object.keys(rows[0] || {});
         const tag = (analysisPlusCache.mode === 'year') ? analysisPlusCache.year : currentMonth;
         downloadCSV(headers, rows, `analysis_plus_${tag}.csv`);
     }
-
 
 </script>
 </body>
