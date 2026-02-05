@@ -159,6 +159,20 @@
 
         <!-- 2. ANALYTICS -->
         <div id="analytics" class="tab-content">
+            <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin-bottom:10px;">
+                <div>
+                    <label style="font-size:12px;color:#666;">Período</label><br>
+                    <select id="analyticsMode" class="input-single" onchange="renderAnalytics()">
+                        <option value="month">Mês (selecionado no topo)</option>
+                        <option value="year">Ano</option>
+                        <option value="all">Tudo</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:12px;color:#666;">Ano</label><br>
+                    <select id="analyticsYear" class="input-single" onchange="renderAnalytics()"></select>
+                </div>
+            </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
                 <div style="grid-column: span 2; height: 350px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Daily Picking Activity</h3><canvas id="dailyChart"></canvas></div>
                 <div style="height: 300px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Top Sold</h3><canvas id="topSoldChart"></canvas></div>
@@ -166,6 +180,12 @@
                 <div class="section-box" style="grid-column: span 2;">
                     <h3>🚩 Procurement Gaps</h3>
                     <table id="disTable"><thead><tr><th>SKU</th><th>Ordered</th><th>Received</th><th style="color:red">Missing</th></tr></thead><tbody id="bodyDiscrepancies"></tbody></table>
+                </div>
+
+                <div class="section-box" style="grid-column: span 2;">
+                    <h3>🚩 Procurement Gaps (ORDER → SENT)</h3>
+                    <table><thead><tr><th>SKU</th><th>Ordered</th><th>Sent</th><th style="color:red">Not Sent</th></tr></thead><tbody id="bodyOrderSentGaps"></tbody></table>
+                </div>
                 </div>
             </div>
         </div>
@@ -342,7 +362,7 @@
         </div>
 
              <div id="management" class="tab-content">
-            <div class="section-box"><button class="btn btn-excel" onclick="exportFullExcel()">📊 Full XLSX Report</button><button class="btn btn-success" onclick="addNewProductMaster()">+ New Product</button><button class="btn btn-danger" onclick="resetMonth()">⚠️ Wipe Month</button><span style="margin-left:12px"></span><input type="file" id="mgmtInitUpload" accept=".csv,.xlsx,.xls" style="display:inline-block; max-width:260px;"><button class="btn btn-success" onclick="importInitQtyFile()">⬆️ Import Init (Produto, Quantidade)</button></div>
+            <div class="section-box"><button class="btn btn-excel" onclick="exportFullExcel()">📊 Full XLSX Report</button><button class="btn btn-excel" onclick="exportAllDataXLSX()">📦 Export ALL (XLSX)</button><button class="btn btn-success" onclick="addNewProductMaster()">+ New Product</button><button class="btn btn-danger" onclick="resetMonth()">⚠️ Wipe Month</button><span style="margin-left:12px"></span><input type="file" id="mgmtInitUpload" accept=".csv,.xlsx,.xls" style="display:inline-block; max-width:260px;"><button class="btn btn-success" onclick="importInitQtyFile()">⬆️ Import Init (Produto, Quantidade)</button></div>
             <div style="overflow-x: auto;"><table><thead><tr><th>Produto</th><th>Init</th><th>Received</th><th>Adj</th><th>Pick</th><th>Amp</th><th>B2B</th><th>Act</th></tr></thead><tbody id="bodyManagement"></tbody></table></div>
         </div>
     </div>
@@ -1477,27 +1497,277 @@
         XLSX.writeFile(wb, `Inventory_Report_${currentMonth}.xlsx`);
     }
 
-    function renderAnalytics() {
+    async function exportAllDataXLSX(){
+        if (!window.fb) return alert('Firebase not ready.');
+        if (userRole === 'pl') return alert('A conta .pl é apenas leitura.');
+
+        const wb = XLSX.utils.book_new();
+
+        // 1) Warehouse master
+        try{
+            const wh = await window.fb.getDocData(['meta','warehouse']);
+            const items = (wh && Array.isArray(wh.items)) ? wh.items : [];
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(items), 'Warehouse_Master');
+        }catch(e){}
+
+        // 2) All months
+        const ids = await window.fb.listDocIds('months');
+        const monthIds = (ids || []).sort((a,b)=>String(a).localeCompare(String(b)));
+
+        const allMovements = [];
+        const allLogs = [];
+
+        for (const mid of monthIds){
+            const d = await window.fb.getDocData(['months', mid]);
+            if (!d) continue;
+
+            const prods = d.products || [];
+            const logsArr = d.logs || [];
+
+            const summary = prods.map(p => ({
+                month: mid,
+                Produto: p.sku,
+                Initial: Number(p.initial||0),
+                Received: (p.movements||[]).filter(m=>m.type==='RECEIVED').reduce((a,c)=>a+Number(c.qty||0),0),
+                Adjust:   (p.movements||[]).filter(m=>m.type==='adjust').reduce((a,c)=>a+Number(c.qty||0),0),
+                Picking:  (p.movements||[]).filter(m=>m.type==='picking').reduce((a,c)=>a+Number(c.qty||0),0),
+                Amsped:   (p.movements||[]).filter(m=>m.type==='amsped').reduce((a,c)=>a+Number(c.qty||0),0),
+                B2B:      (p.movements||[]).filter(m=>m.type==='b2b').reduce((a,c)=>a+Number(c.qty||0),0),
+                ToConfirm: Number(p.toConfirm||0),
+            }));
+
+            prods.forEach(p => {
+                (p.movements||[]).forEach(m => {
+                    allMovements.push({
+                        month: mid,
+                        date: m.date || '',
+                        produto: p.sku,
+                        type: m.type || '',
+                        qty: Number(m.qty||0),
+                        note: m.note || '',
+                        by: m.by || '',
+                        uid: m.uid || ''
+                    });
+                });
+            });
+
+            logsArr.forEach(l => {
+                allLogs.push({
+                    month: mid,
+                    date: l.date || '',
+                    arrivalDate: l.arrivalDate || '',
+                    sku: l.sku || '',
+                    status: l.status || '',
+                    qty: Number(l.qty||0),
+                    receivedQty: Number(l.receivedQty||0),
+                    note: l.note || '',
+                    by: l.by || '',
+                    uid: l.uid || '',
+                    sourceMonth: l.sourceMonth || '',
+                    sourceId: l.sourceId || ''
+                });
+            });
+
+            const safeName = ('M_' + mid).replace(/[^A-Za-z0-9_]/g,'_');
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), safeName + '_Summary');
+        }
+
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allLogs), 'ALL_Logs');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allMovements), 'ALL_Movements');
+
+        XLSX.writeFile(wb, `Inventory_ALL_DATA_${new Date().toISOString().slice(0,10)}.xlsx`);
+    }
+
+
+    async function getAllMonthIdsSorted(){
+        const ids = await window.fb.listDocIds('months'); // ["YYYY-MM", ...]
+        return (ids || []).sort((a,b)=>String(a).localeCompare(String(b)));
+    }
+
+    async function getMonthDoc(monthId){
+        try { return await window.fb.getDocData(['months', monthId]); } catch(e){ return null; }
+    }
+
+    async function getMonthsForMode(){
+        const mode = document.getElementById('analyticsMode')?.value || 'month';
+
+        if (mode === 'month') {
+            const data = allData[currentMonth] || await getMonthDoc(currentMonth);
+            return [{ id: currentMonth, data }];
+        }
+
+        const ids = await getAllMonthIdsSorted();
+
+        if (mode === 'year') {
+            const y = document.getElementById('analyticsYear')?.value || String(new Date().getFullYear());
+            const yearIds = ids.filter(m => String(m).startsWith(y + '-'));
+            const out = [];
+            for (const mid of yearIds){
+                const d = await getMonthDoc(mid);
+                if (d) out.push({ id: mid, data: d });
+            }
+            return out;
+        }
+
+        // mode === 'all'
+        const out = [];
+        for (const mid of ids){
+            const d = await getMonthDoc(mid);
+            if (d) out.push({ id: mid, data: d });
+        }
+        return out;
+    }
+
+    function sumMovementsFromMonthDoc(monthDoc, movementType){
+        const prods = monthDoc?.products || [];
+        let total = 0;
+        prods.forEach(p => {
+            (p.movements || []).forEach(m => {
+                if (m?.type === movementType) total += Number(m.qty || 0);
+            });
+        });
+        return total;
+    }
+
+    function rankSkuAcrossMonths(monthDocs, movementType, topN=5){
+        const acc = new Map(); // sku -> qty
+        monthDocs.forEach(({data}) => {
+            (data?.products || []).forEach(p => {
+                let q = 0;
+                (p.movements || []).forEach(m => { if (m?.type === movementType) q += Number(m.qty||0); });
+                if (q > 0) acc.set(p.sku, (acc.get(p.sku)||0) + q);
+            });
+        });
+        return Array.from(acc.entries())
+            .map(([sku,q])=>({sku,q}))
+            .sort((a,b)=>b.q-a.q)
+            .slice(0, topN);
+    }
+
+    async function ensureAnalyticsYearOptions(){
+        const sel = document.getElementById('analyticsYear');
+        if (!sel) return;
+        const ids = await getAllMonthIdsSorted();
+        const years = Array.from(new Set(ids.map(m => String(m).slice(0,4)))).sort();
+        const curY = String(new Date().getFullYear());
+        sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+        sel.value = years.includes(curY) ? curY : (years[years.length-1] || curY);
+    }
+
+    function renderOrderVsSentGaps(accMap){
+        const body2 = document.getElementById('bodyOrderSentGaps');
+        if (!body2) return;
+        body2.innerHTML = '';
+
+        const rows = Array.from(accMap.values())
+            .filter(r => (r.ordered || 0) > (r.sent || 0))
+            .map(r => ({ ...r, missing: (Number(r.ordered||0) - Number(r.sent||0)) }))
+            .sort((a,b)=> b.missing - a.missing);
+
+        rows.forEach(r => {
+            body2.innerHTML += `<tr>
+                <td>${r.sku}</td>
+                <td>${r.ordered}</td>
+                <td>${r.sent}</td>
+                <td style="color:red;font-weight:bold">${r.missing}</td>
+            </tr>`;
+        });
+    }
+
+    async function renderAnalytics() {
         Object.values(charts).forEach(c => { if(c) c.destroy(); });
-        const days = Array.from({length: 31}, (_, i) => String(i + 1).padStart(2, '0'));
-        const pickingData = days.map(d => {
-            const ds = `${currentMonth}-${d}`;
-            return products.reduce((acc, p) => acc + p.movements.filter(m => m.date === ds && m.type === 'picking').reduce((a,c)=>a+c.qty,0), 0);
+        if (!window.fb) return;
+
+        const mode = document.getElementById('analyticsMode')?.value || 'month';
+        if (mode !== 'month') await ensureAnalyticsYearOptions();
+
+        const months = await getMonthsForMode(); // [{id,data}]
+        const monthDoc = months[0]?.data || { products: [], logs: [] };
+
+        // Keep legacy globals consistent for other UI parts if needed
+        products = monthDoc.products || [];
+        logs = monthDoc.logs || [];
+
+        // --- Chart 1: Picking activity ---
+        if (mode === 'month') {
+            const days = Array.from({length: 31}, (_, i) => String(i + 1).padStart(2, '0'));
+            const pickingData = days.map(d => {
+                const ds = `${currentMonth}-${d}`;
+                return (products || []).reduce((acc, p) =>
+                    acc + (p.movements || []).filter(m => m.date === ds && m.type === 'picking').reduce((a,c)=>a+Number(c.qty||0),0),
+                0);
+            });
+
+            charts.daily = new Chart(document.getElementById('dailyChart'), {
+                type: 'line',
+                data: { labels: days, datasets: [{ label: 'Picking Activity', data: pickingData, borderColor: '#007bff', fill: true }] },
+                options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+            });
+        } else {
+            const labels = months.map(x => x.id);
+            const pickingByMonth = months.map(x => sumMovementsFromMonthDoc(x.data, 'picking'));
+
+            charts.daily = new Chart(document.getElementById('dailyChart'), {
+                type: 'bar',
+                data: { labels, datasets: [{ label: 'Picking (total por mês)', data: pickingByMonth }] },
+                options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+            });
+        }
+
+        // --- Charts 2 & 3: Top Sold + Returns (agregado no período) ---
+        const topSold = rankSkuAcrossMonths(months, 'amsped', 5);
+        charts.top = new Chart(document.getElementById('topSoldChart'), {
+            type: 'bar',
+            data: { labels: topSold.map(d => d.sku), datasets: [{ label: 'Sales', data: topSold.map(d => d.q), backgroundColor: '#2ecc71' }] },
+            options: { indexAxis: 'y', maintainAspectRatio: false }
         });
-        charts.daily = new Chart(document.getElementById('dailyChart'), {
-            type: 'line', data: { labels: days, datasets: [{ label: 'Picking Activity', data: pickingData, borderColor: '#007bff', fill: true }] },
-            options: { maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+
+        const topReturns = rankSkuAcrossMonths(months, 'returns', 5);
+        charts.ret = new Chart(document.getElementById('returnsChart'), {
+            type: 'bar',
+            data: { labels: topReturns.map(d => d.sku), datasets: [{ label: 'Returns', data: topReturns.map(d => d.q), backgroundColor: '#e74c3c' }] },
+            options: { indexAxis: 'y', maintainAspectRatio: false }
         });
-        const getRank = (type) => products.map(p => ({ sku: p.sku, q: sum(p, type) })).filter(x => x.q > 0).sort((a,b) => b.q - a.q).slice(0, 5);
-        charts.top = new Chart(document.getElementById('topSoldChart'), { type: 'bar', data: { labels: getRank('amsped').map(d => d.sku), datasets: [{ label: 'Sales', data: getRank('amsped').map(d => d.q), backgroundColor: '#2ecc71' }] }, options: { indexAxis: 'y', maintainAspectRatio: false } });
-        charts.ret = new Chart(document.getElementById('returnsChart'), { type: 'bar', data: { labels: getRank('returns').map(d => d.sku), datasets: [{ label: 'Returns', data: getRank('returns').map(d => d.q), backgroundColor: '#e74c3c' }] }, options: { indexAxis: 'y', maintainAspectRatio: false } });
-        
-        const body = document.getElementById('bodyDiscrepancies'); body.innerHTML = '';
-        products.forEach(p => {
-            const ordered = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'ORDER').reduce((a,c)=>a+c.qty, 0);
-            const received = sum(p, 'RECEIVED');
-            if(ordered > received) body.innerHTML += `<tr><td>${p.sku}</td><td>${ordered}</td><td>${received}</td><td style="color:red;font-weight:bold">${ordered-received}</td></tr>`;
+
+        // --- Procurement gaps (ORDER vs RECEIVED) + (ORDER vs SENT) ---
+        const body = document.getElementById('bodyDiscrepancies');
+        if (body) body.innerHTML = '';
+
+        const acc = new Map(); // normSku -> {sku, ordered, sent, received}
+
+        months.forEach(({data}) => {
+            const logsArr = data?.logs || [];
+            const prods = data?.products || [];
+
+            logsArr.forEach(l => {
+                const sku = l?.sku || '';
+                if (!sku) return;
+                const k = normKey(sku);
+                if (!acc.has(k)) acc.set(k, { sku, ordered:0, sent:0, received:0 });
+                const row = acc.get(k);
+                if (l.status === 'ORDER') row.ordered += Number(l.qty||0);
+                if (l.status === 'SENT')  row.sent    += Number(l.qty||0);
+            });
+
+            prods.forEach(p => {
+                const k = normKey(p.sku);
+                if (!acc.has(k)) acc.set(k, { sku: p.sku, ordered:0, sent:0, received:0 });
+                const row = acc.get(k);
+                row.received += (p.movements || []).filter(m => m.type === 'RECEIVED')
+                    .reduce((a,c)=>a + Number(c.qty||0), 0);
+            });
         });
+
+        if (body) {
+            Array.from(acc.values())
+                .filter(r => Number(r.ordered||0) > Number(r.received||0))
+                .sort((a,b)=> (Number(b.ordered||0)-Number(b.received||0)) - (Number(a.ordered||0)-Number(a.received||0)))
+                .forEach(r => {
+                    body.innerHTML += `<tr><td>${r.sku}</td><td>${r.ordered}</td><td>${r.received}</td><td style="color:red;font-weight:bold">${Number(r.ordered||0)-Number(r.received||0)}</td></tr>`;
+                });
+        }
+
+        renderOrderVsSentGaps(acc);
     }
 
     function openTab(id) {
@@ -1505,7 +1775,7 @@
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.getElementById(id).classList.add('active');
         event.currentTarget.classList.add('active');
-        if(id === 'analytics') setTimeout(renderAnalytics, 50); else renderAll();
+        if(id === 'analytics') setTimeout(async () => { await ensureAnalyticsYearOptions(); renderAnalytics(); }, 50); else renderAll();
     }
 
     function setDates() {
