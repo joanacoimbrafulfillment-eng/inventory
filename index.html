@@ -171,23 +171,40 @@
 
                 <div id="analyticsMonthWrap">
                     <label style="font-size:12px;color:#666;">Mês (Analytics)</label><br>
-                    <input type="month" id="analyticsMonth" class="input-single" onchange="renderAnalytics()">
+                    <select id="analyticsMonth" class="input-single" onchange="renderAnalytics()"></select>
                 </div>
 
                 <div id="analyticsYearWrap">
                     <label style="font-size:12px;color:#666;">Ano</label><br>
                     <select id="analyticsYear" class="input-single" onchange="renderAnalytics()"></select>
                 </div>
+
+                <div style="margin-left:auto; display:flex; gap:10px;">
+                    <button class="btn btn-excel" onclick="exportAnalyticsCSV()">⬇️ Export Analytics (CSV)</button>
+                </div>
             </div>
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
                 <div style="grid-column: span 2; height: 350px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Daily Picking Activity</h3><canvas id="dailyChart"></canvas></div>
                 <div style="height: 300px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Top Sold</h3><canvas id="topSoldChart"></canvas></div>
                 <div style="height: 300px; border: 1px solid #eee; padding: 15px; border-radius: 12px;"><h3>Returns</h3><canvas id="returnsChart"></canvas></div>
                 <div class="section-box" style="grid-column: span 2;">
-                    <h3>🚩 Procurement Coverage (ORDER vs SENT vs RECEIVED)</h3>
-                    <table id="disTable"><thead><tr><th>SKU</th><th>Ordered</th><th>Sent</th><th>Received</th><th style="color:#e67e22">Missing Sent</th><th style="color:#e74c3c">Missing Received</th></tr></thead><tbody id="bodyDiscrepancies"></tbody></table>
+                    <h3>📦 Procurement Coverage (ORDER vs SENT vs RECEIVED)</h3>
+                    <p style="margin-top:-6px;color:#666;font-size:12px;">Ordenado por: <b>Ordered - (Sent + Received)</b>. Mostra apenas SKUs com valor &gt; 0.</p>
+                    <table id="disTable">
+                        <thead>
+                            <tr>
+                                <th>SKU</th>
+                                <th>Ordered</th>
+                                <th>Sent</th>
+                                <th>Received</th>
+                                <th style="color:red">Ordered - (Sent+Received)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bodyDiscrepancies"></tbody>
+                    </table>
                 </div>
-</div>
+                </div>
             </div>
         </div>
 
@@ -694,8 +711,6 @@
 
     async function changeMonth() {
         currentMonth = document.getElementById('monthPicker').value;
-        const am = document.getElementById('analyticsMonth');
-        if (am && !am.value) am.value = currentMonth;
         if (userRole === 'pl') {
             startGeneralRealtime();
         } else {
@@ -947,6 +962,7 @@
         } catch (e) {
             console.error('Firestore general view save failed', e);
         }
+    }
 
     // PT helper: publish General snapshots for ALL saved months so .pl can view historical months too
     async function backfillGeneralViews() {
@@ -956,10 +972,9 @@
             if (btn) { btn.disabled = true; btn.textContent = '⏳ A publicar...'; }
 
             const monthIds = await window.fb.listDocIds('months');
-            // sort YYYY-MM
             monthIds.sort((a,b) => String(a).localeCompare(String(b)));
 
-                        // Prefetch all months (products + logs) once
+            // Prefetch all months (products + logs) once
             const monthDataMap = {};
             for (const mid of monthIds) {
                 try {
@@ -970,11 +985,9 @@
                 }
             }
 
-            // Helper: is a SENT log still "in transit" as of the end of targetMonth?
             function sentIsOpenAsOf(log, targetMonth) {
                 if (!log || log.status !== 'SENT') return false;
-                if (!log.receivedInMonth) return true; // not received yet
-                // If received in a later month, it was still in transit for targetMonth
+                if (!log.receivedInMonth) return true;
                 return String(log.receivedInMonth).localeCompare(String(targetMonth)) > 0;
             }
 
@@ -983,13 +996,10 @@
                 if (!data) continue;
 
                 const monthProducts = reconcileWithMaster(data.products || []);
-                const monthLogs = data.logs || [];
 
-                // Compute transit for this month INCLUDING open SENT from previous months
-                // Transit for mid = sum of all SENT shipments with fromMonth <= mid that are still open as-of mid
                 const transitBySku = {};
                 for (const fromMonth of monthIds) {
-                    if (String(fromMonth).localeCompare(String(mid)) > 0) break; // only months up to mid
+                    if (String(fromMonth).localeCompare(String(mid)) > 0) break;
                     const d2 = monthDataMap[fromMonth];
                     if (!d2 || !Array.isArray(d2.logs)) continue;
                     d2.logs.forEach(l => {
@@ -1031,7 +1041,6 @@
             const btn = document.getElementById('btnBackfillGeneral');
             if (btn) { btn.disabled = false; btn.textContent = '📣 Publicar meses p/ PL'; }
         }
-    }
     }
 
     function startGeneralRealtime() {
@@ -1595,7 +1604,7 @@
         const mode = document.getElementById('analyticsMode')?.value || 'month';
 
         if (mode === 'month') {
-            const mid = getAnalyticsSelectedMonthId();
+            const mid = document.getElementById('analyticsMonth')?.value || currentMonth;
             const data = allData[mid] || await getMonthDoc(mid);
             return [{ id: mid, data }];
         }
@@ -1652,10 +1661,116 @@
         const sel = document.getElementById('analyticsYear');
         if (!sel) return;
         const ids = await getAllMonthIdsSorted();
-        const years = Array.from(new Set(ids.map(m => String(m).slice(0,4)))).sort();
+        const years = Array.from(new Set((ids || []).map(m => String(m).slice(0,4)))).sort();
         const curY = String(new Date().getFullYear());
         sel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
         sel.value = years.includes(curY) ? curY : (years[years.length-1] || curY);
+    }
+
+    async function ensureAnalyticsMonthOptions(){
+        const sel = document.getElementById('analyticsMonth');
+        if (!sel) return;
+        const ids = await getAllMonthIdsSorted();
+        sel.innerHTML = (ids || []).map(m => `<option value="${m}">${m}</option>`).join('');
+        const wanted = sel.value || currentMonth;
+        if ((ids || []).includes(wanted)) sel.value = wanted;
+        else if ((ids || []).includes(currentMonth)) sel.value = currentMonth;
+        else sel.value = (ids && ids.length) ? ids[ids.length-1] : currentMonth;
+    }
+
+    async function exportAnalyticsCSV(){
+        try{
+            if (!window.fb) return alert('Firebase not ready.');
+
+            const mode = document.getElementById('analyticsMode')?.value || 'month';
+            if (mode === 'month') await ensureAnalyticsMonthOptions();
+            if (mode === 'year') await ensureAnalyticsYearOptions();
+
+            const months = await getMonthsForMode(); // [{id,data}]
+            const periodLabel =
+                (mode === 'month') ? (months[0]?.id || '') :
+                (mode === 'year') ? (document.getElementById('analyticsYear')?.value || '') :
+                'ALL';
+
+            // Dataset 1: picking series (daily for month, monthly otherwise)
+            const pickingRows = [];
+            if (mode === 'month') {
+                const monthId = months[0]?.id;
+                const monthDoc = months[0]?.data || { products: [] };
+                const days = Array.from({length: 31}, (_, i) => String(i + 1).padStart(2, '0'));
+                days.forEach(d => {
+                    const ds = `${monthId}-${d}`;
+                    const qty = (monthDoc.products || []).reduce((acc, p) => {
+                        const v = (p.movements || []).filter(m => m.date === ds && m.type === 'picking')
+                            .reduce((a,c)=>a + Number(c.qty||0), 0);
+                        return acc + v;
+                    }, 0);
+                    pickingRows.push({ dataset: 'picking_series', period: periodLabel, label: ds, qty });
+                });
+            } else {
+                months.forEach(({id,data}) => {
+                    const qty = sumMovementsFromMonthDoc(data, 'picking');
+                    pickingRows.push({ dataset: 'picking_series', period: periodLabel, label: id, qty });
+                });
+            }
+
+            // Dataset 2/3: top sold + returns (top 50 for export)
+            const topSold = rankSkuAcrossMonths(months, 'amsped', 50).map(x => ({
+                dataset: 'top_sold_amsped', period: periodLabel, sku: x.sku, qty: x.q
+            }));
+            const topReturns = rankSkuAcrossMonths(months, 'returns', 50).map(x => ({
+                dataset: 'top_returns', period: periodLabel, sku: x.sku, qty: x.q
+            }));
+
+            // Dataset 4: Procurement coverage (ALL SKUs)
+            const acc = new Map(); // normSku -> {sku, ordered, sent, received}
+            months.forEach(({data}) => {
+                const logsArr = data?.logs || [];
+                const prods = data?.products || [];
+
+                logsArr.forEach(l => {
+                    const sku = l?.sku || '';
+                    if (!sku) return;
+                    const k = normKey(sku);
+                    if (!acc.has(k)) acc.set(k, { sku, ordered:0, sent:0, received:0 });
+                    const row = acc.get(k);
+                    if (l.status === 'ORDER') row.ordered += Number(l.qty||0);
+                    if (l.status === 'SENT')  row.sent    += Number(l.qty||0);
+                });
+
+                prods.forEach(p => {
+                    const k = normKey(p.sku);
+                    if (!acc.has(k)) acc.set(k, { sku: p.sku, ordered:0, sent:0, received:0 });
+                    const row = acc.get(k);
+                    row.received += (p.movements || []).filter(m => m.type === 'RECEIVED')
+                        .reduce((a,c)=>a + Number(c.qty||0), 0);
+                });
+            });
+
+            const procurementRows = Array.from(acc.values()).map(r => {
+                const ordered = Number(r.ordered||0);
+                const sent = Number(r.sent||0);
+                const received = Number(r.received||0);
+                const gap = ordered - (sent + received);
+                return { dataset: 'procurement_coverage', period: periodLabel, sku: r.sku, ordered, sent, received, gap };
+            }).sort((a,b)=> b.gap - a.gap);
+
+            const rows = [...pickingRows, ...topSold, ...topReturns, ...procurementRows];
+
+            const csv = Papa.unparse(rows, { quotes: true });
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Analytics_${mode}_${periodLabel}_${new Date().toISOString().slice(0,10)}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch(e){
+            console.error(e);
+            alert('Falha ao exportar Analytics CSV.');
+        }
     }
 
     async function renderAnalytics() {
@@ -1663,23 +1778,28 @@
         if (!window.fb) return;
 
         const mode = document.getElementById('analyticsMode')?.value || 'month';
-        updateAnalyticsControls();
-        if (mode === 'year') await ensureAnalyticsYearOptions();
+
+        // UI: month selector is independent from top picker
+        const monthWrap = document.getElementById('analyticsMonthWrap');
+        const yearWrap = document.getElementById('analyticsYearWrap');
+        if (monthWrap) monthWrap.style.display = (mode === 'month') ? 'block' : 'none';
+        if (yearWrap) yearWrap.style.display = (mode === 'year') ? 'block' : 'none';
+        if (mode === 'month') await ensureAnalyticsMonthOptions();
+        if (mode !== 'month') await ensureAnalyticsYearOptions();
 
         const months = await getMonthsForMode(); // [{id,data}]
-        const monthIdForMonthMode = months[0]?.id || getAnalyticsSelectedMonthId();
         const monthDoc = months[0]?.data || { products: [], logs: [] };
 
-        // IMPORTANT: Analytics must NOT mutate the global month state used by other tabs.
-        const monthProducts = monthDoc.products || [];
-        const monthLogs = monthDoc.logs || [];
+        // Keep legacy globals consistent for other UI parts if needed
+        products = monthDoc.products || [];
+        logs = monthDoc.logs || [];
 
         // --- Chart 1: Picking activity ---
         if (mode === 'month') {
             const days = Array.from({length: 31}, (_, i) => String(i + 1).padStart(2, '0'));
             const pickingData = days.map(d => {
-                const ds = `${monthIdForMonthMode}-${d}`;
-                return (monthProducts || []).reduce((acc, p) =>
+                const ds = `${months[0].id}-${d}`;
+                return (products || []).reduce((acc, p) =>
                     acc + (p.movements || []).filter(m => m.date === ds && m.type === 'picking').reduce((a,c)=>a+Number(c.qty||0),0),
                 0);
             });
@@ -1715,7 +1835,7 @@
             options: { indexAxis: 'y', maintainAspectRatio: false }
         });
 
-        // --- Procurement gaps (ORDER vs RECEIVED) + (ORDER vs SENT) ---
+        // --- Procurement Coverage (ORDER vs SENT vs RECEIVED) ---
         const body = document.getElementById('bodyDiscrepancies');
         if (body) body.innerHTML = '';
 
@@ -1725,6 +1845,7 @@
             const logsArr = data?.logs || [];
             const prods = data?.products || [];
 
+            // ORDER / SENT from logs
             logsArr.forEach(l => {
                 const sku = l?.sku || '';
                 if (!sku) return;
@@ -1735,6 +1856,7 @@
                 if (l.status === 'SENT')  row.sent    += Number(l.qty||0);
             });
 
+            // RECEIVED from movements
             prods.forEach(p => {
                 const k = normKey(p.sku);
                 if (!acc.has(k)) acc.set(k, { sku: p.sku, ordered:0, sent:0, received:0 });
@@ -1744,32 +1866,27 @@
             });
         });
 
+        const rows = Array.from(acc.values())
+            .map(r => {
+                const ordered = Number(r.ordered||0);
+                const sent = Number(r.sent||0);
+                const received = Number(r.received||0);
+                const gap = ordered - (sent + received);
+                return { sku: r.sku, ordered, sent, received, gap };
+            })
+            .filter(r => r.gap > 0)
+            .sort((a,b) => b.gap - a.gap);
+
         if (body) {
-            Array.from(acc.values())
-                .map(r => {
-                    const ordered = Number(r.ordered||0);
-                    const sent = Number(r.sent||0);
-                    const received = Number(r.received||0);
-                    return {
-                        sku: r.sku,
-                        ordered, sent, received,
-                        missSent: Math.max(0, ordered - sent),
-                        missReceived: Math.max(0, ordered - received)
-                    };
-                })
-                // show anything not fully covered (either not fully sent or not fully received)
-                .filter(r => r.missSent > 0 || r.missReceived > 0)
-                .sort((a,b)=> Math.max(b.missSent, b.missReceived) - Math.max(a.missSent, a.missReceived))
-                .forEach(r => {
-                    body.innerHTML += `<tr>
-                        <td>${r.sku}</td>
-                        <td>${r.ordered}</td>
-                        <td>${r.sent}</td>
-                        <td>${r.received}</td>
-                        <td style="color:#e67e22;font-weight:bold">${r.missSent}</td>
-                        <td style="color:#e74c3c;font-weight:bold">${r.missReceived}</td>
-                    </tr>`;
-                });
+            rows.forEach(r => {
+                body.innerHTML += `<tr>
+                    <td>${r.sku}</td>
+                    <td>${r.ordered}</td>
+                    <td>${r.sent}</td>
+                    <td>${r.received}</td>
+                    <td style="color:red;font-weight:bold">${r.gap}</td>
+                </tr>`;
+            });
         }
 
     }
@@ -1779,13 +1896,7 @@
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         document.getElementById(id).classList.add('active');
         event.currentTarget.classList.add('active');
-        if(id === 'analytics') setTimeout(async () => {
-            const am = document.getElementById('analyticsMonth');
-            if (am && !am.value) am.value = currentMonth;
-            updateAnalyticsControls();
-            if ((document.getElementById('analyticsMode')?.value || 'month') === 'year') await ensureAnalyticsYearOptions();
-            renderAnalytics();
-        }, 50); else renderAll();
+        if(id === 'analytics') setTimeout(async () => { await ensureAnalyticsYearOptions(); await ensureAnalyticsMonthOptions(); renderAnalytics(); }, 50); else renderAll();
     }
 
     function setDates() {
@@ -1840,22 +1951,6 @@ function processBulkFromSelect(id) {
     save(); renderAll();
     textEl.value = "";
 }
-
-    function updateAnalyticsControls(){
-        const mode = document.getElementById('analyticsMode')?.value || 'month';
-        const mw = document.getElementById('analyticsMonthWrap');
-        const yw = document.getElementById('analyticsYearWrap');
-        if (mw) mw.style.display = (mode === 'month') ? '' : 'none';
-        if (yw) yw.style.display = (mode === 'year') ? '' : 'none';
-    }
-
-
-    function getAnalyticsSelectedMonthId(){
-        // Analytics can analyze a different month than the top monthPicker.
-        const v = document.getElementById('analyticsMonth')?.value;
-        return (v && String(v).trim()) ? String(v).trim() : String(currentMonth || '');
-    }
-
 
 
     function showHistory(i) {
@@ -1985,6 +2080,12 @@ function renderWarehouse() {
                     if (!opts.readonly) {
                         warehouseItems[idx][field] = inp.value;
                         saveWarehouse();
+                        if (field === 'produto') {
+                            // Keep Management/Month product lists synced with the master list
+                            syncProductsFromWarehouse();
+                            renderManagement();
+                            updateDatalist();
+                        }
                     }
                     if (opts.onchange) opts.onchange(inp.value);
                 };
@@ -2031,6 +2132,8 @@ function addWarehouseRow() {
         warehouseItems.unshift({ produto:'', posicao:'', dimensoes:'', peso:'', volume:'' });
         saveWarehouse();
         renderWarehouse(); renderMovements();
+        syncProductsFromWarehouse();
+        syncProductsFromWarehouse();
     }
 
     function deleteWarehouseRow(idx) {
@@ -2038,6 +2141,8 @@ function addWarehouseRow() {
         warehouseItems.splice(idx, 1);
         saveWarehouse();
         renderWarehouse(); renderMovements();
+        syncProductsFromWarehouse();
+        syncProductsFromWarehouse();
     }
 
     function clearWarehouse() {
@@ -2045,6 +2150,8 @@ function addWarehouseRow() {
         warehouseItems = [];
         saveWarehouse();
         renderWarehouse(); renderMovements();
+        syncProductsFromWarehouse();
+        syncProductsFromWarehouse();
     syncProductsFromWarehouse();
     }
 
@@ -2140,6 +2247,29 @@ function addWarehouseRow() {
     function applyInitQtyRows(rows) {
         if (!rows || !rows.length) { alert('No rows found.'); return; }
 
+        // Ensure every product in the file exists in the Warehouse master (auto-add if missing)
+        const fileProds = rows
+            .map(r => (r[0] ?? '').toString().trim())
+            .filter(Boolean);
+
+        let changedMaster = false;
+        fileProds.forEach(prod => {
+            const exists = (warehouseItems || []).some(w =>
+                (w?.produto || '').toString().trim().toLowerCase() === prod.toLowerCase()
+            );
+            if (!exists) {
+                warehouseItems.push({ produto: prod, posicao: '', dimensoes: '', peso: '', volume: '' });
+                changedMaster = true;
+            }
+        });
+
+        if (changedMaster) {
+            saveWarehouse();
+            // Make sure product lists (Management + current month) include the new products
+            syncProductsFromWarehouse();
+            renderWarehouse();
+        }
+
         // Build index of products by normalized name (produto)
         const idx = new Map();
         products.forEach((p, i) => {
@@ -2151,7 +2281,8 @@ function addWarehouseRow() {
         products.forEach(p => { p.initial = 0; });
 
         let applied = 0;
-        const missing = [];
+        const stillMissing = [];
+
         rows.forEach(r => {
             const prod = (r[0] ?? '').toString().trim();
             if (!prod) return;
@@ -2165,7 +2296,8 @@ function addWarehouseRow() {
                 products[idx.get(key)].initial = qty;
                 applied++;
             } else {
-                missing.push(prod);
+                // In case of weird whitespace/encoding mismatch
+                stillMissing.push(prod);
             }
         });
 
@@ -2173,8 +2305,11 @@ function addWarehouseRow() {
         renderAll();
 
         let msg = `Imported initial quantities for ${applied} products.`;
-        if (missing.length) {
-            msg += `\nNot found in Warehouse master list (${missing.length}): ${missing.slice(0, 20).join(', ')}${missing.length > 20 ? '...' : ''}`;
+        if (changedMaster) msg += `
+Added ${fileProds.length - (fileProds.length - (warehouseItems||[]).length)} new products to Warehouse master (auto-sync).`;
+        if (stillMissing.length) {
+            msg += `
+Still not matched (${stillMissing.length}): ${stillMissing.slice(0, 20).join(', ')}${stillMissing.length > 20 ? '...' : ''}`;
         }
         alert(msg);
     }
