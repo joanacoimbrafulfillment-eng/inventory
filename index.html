@@ -442,14 +442,17 @@
   };
 
   function roleFromEmail(email){
-    if (!email) return "none";
-    const e = String(email).toLowerCase().trim();
-    // Support both full domains (e.g., user@empresa.pt / user@empresa.pl)
-    // and very short domains (e.g., user@pt / user@pl) if you use them internally.
-    if (e.endsWith(".pt") || e.endsWith("@pt")) return "pt";
-    if (e.endsWith(".pl") || e.endsWith("@pl")) return "pl";
-    return "none";
-  }
+      if (!email) return "none";
+      const e = String(email).toLowerCase().trim();
+
+      // ADMIN (PT) — novo padrão igual ao Office
+      if (e.endsWith("@admin.com")) return "pt";
+
+      // PL — mantém como tens hoje
+      if (e.endsWith(".pl") || e.endsWith("@pl") || e.endsWith("@pl.pl")) return "pl";
+
+      return "none";
+    }
 
   function setAuthUI(user){
     const userEl = document.getElementById("authUser");
@@ -538,7 +541,7 @@
       if (main) main.style.display = "none";
       if (init) init.style.display = "none";
       applyRoleToTabs("none");
-      alert("Sem permissões: apenas emails terminados em .pt (admin) ou .pl (General-only).");
+      alert("Sem permissões: apenas @admin.com (admin) ou .pl / @pl.pl (General-only).");
       return;
     }
 
