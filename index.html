@@ -334,6 +334,10 @@
                     </div>
                     <button class="btn" onclick="exportMovementsCSV()">⬇️ Export CSV</button>
                     <button class="btn" onclick="exportMovementsXLSX()">⬇️ Export XLSX</button>
+                    <span id="officeSyncBadge" style="margin-left:10px; font-weight:700;">Office sync: OFF</span>
+                    <button class="btn" onclick="startOfficeSync()">🔌 Connect OFFICE</button>
+                    <button class="btn" onclick="exportOfficeMovementsCSV()">🏷️ Export OFFICE CSV</button>
+                    <button class="btn" onclick="exportOfficeMovementsXLSX()">🏷️ Export OFFICE XLSX</button>
                 </div>
                 <p style="margin-top:8px; color:#666;">Exports use <b>;</b> as separator for Excel.</p>
             </div>
@@ -393,6 +397,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
   import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
   import { initializeFirestore, doc, getDoc, setDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+import { getDatabase, ref as rtdbRef, onChildAdded, onChildChanged, onValue, query, orderByChild, startAt } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBvJIwx6KDSrwdnJ1o8vqvttsv9dzycY6g",
@@ -402,10 +407,24 @@
     messagingSenderId: "882561809403",
     appId: "1:882561809403:web:c0d3e4c5dafa410d5d295e"
   };
+  const officeConfig = {
+        apiKey: "AIzaSyDExvgmtrSILCATQgE8ICJX-SVntb5lM2Y",
+        authDomain: "wh-murtede.firebaseapp.com",
+        databaseURL: "https://wh-murtede-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "wh-murtede",
+        storageBucket: "wh-murtede.firebasestorage.app",
+        messagingSenderId: "415946575714",
+        appId: "1:415946575714:web:b1516b91b9735b9248e63b"
+    };
 
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
-  const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
+  
+  // Office (Realtime DB) - secondary Firebase app
+  const officeApp = initializeApp(officeConfig, "office");
+  const officeAuth = getAuth(officeApp);
+  const officeRtdb = getDatabase(officeApp);
+const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
 
   // Expose minimal helpers to the legacy (non-module) code
   window.fb = {
@@ -506,7 +525,11 @@
       const pass = document.getElementById("loginPass").value;
       if(!email || !pass) return alert("Preenche email e password.");
       await signInWithEmailAndPassword(auth, email, pass);
-    } catch (e){
+      // login also into Office Firebase project (RTDB)
+      await signInWithEmailAndPassword(officeAuth, email, pass);
+      // start Office->Inventory sync after both logins
+      startOfficeSync();
+} catch (e){
       alert("Login falhou: " + (e?.message || e));
     }
   };
@@ -519,8 +542,236 @@
     }
   };
 
+
+  // =========================
+  // Office -> Inventory Sync
+  // =========================
+  let officeSyncStarted = false;
+
+  function dateToMonthKey(dateClean){
+    const d = String(dateClean || "").slice(0,10);
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+    return d.slice(0,7);
+  }
+
+  function normSku(s){
+    return String(s||"").trim().toUpperCase();
+  }
+
+  function splitProds(str){
+    const raw = String(str||"").trim();
+    if(!raw) return [];
+    return raw.split(" | ").map(x=>x.trim()).filter(Boolean);
+  }
+
+    // --- Debounced month writes to avoid Firestore write stream exhaustion ---
+  const __officeMonthState = {}; // { [monthKey]: { data, loaded, loadingPromise, timer, dirty } }
+
+  async function __loadMonthDoc(monthKey){
+    if(__officeMonthState[monthKey]?.loaded) return __officeMonthState[monthKey].data;
+    if(__officeMonthState[monthKey]?.loadingPromise) return __officeMonthState[monthKey].loadingPromise;
+    __officeMonthState[monthKey] = __officeMonthState[monthKey] || {};
+    __officeMonthState[monthKey].loadingPromise = (async ()=>{
+      const data = (await window.fb.getDocData(["months", monthKey])) || { products: [], logs: [] };
+      if(!Array.isArray(data.products)) data.products = [];
+      if(!Array.isArray(data.logs)) data.logs = [];
+      __officeMonthState[monthKey].data = data;
+      __officeMonthState[monthKey].loaded = true;
+      __officeMonthState[monthKey].loadingPromise = null;
+      return data;
+    })();
+    return __officeMonthState[monthKey].loadingPromise;
+  }
+
+  function __scheduleMonthSave(monthKey){
+    const st = __officeMonthState[monthKey];
+    if(!st) return;
+    st.dirty = true;
+    if(st.timer) return;
+    st.timer = setTimeout(async ()=>{
+      st.timer = null;
+      if(!st.dirty) return;
+      st.dirty = false;
+      try{
+        await window.fb.setDocData(["months", monthKey], {
+          products: st.data.products || [],
+          logs: st.data.logs || [],
+          updatedAt: new Date().toISOString(),
+          updatedBy: "office-sync",
+          updatedUid: "office-sync"
+        });
+      }catch(e){
+        console.error("Office sync: failed to write months/"+monthKey, e);
+        st.dirty = true; // retry later
+      }
+    }, 900);
+  }
+
+  async function applyMovementToMonth({ monthKey, sku, type, sourceId, qty, date, by, uid="office-sync" }){
+    if(!monthKey || !sku) return;
+    const data = await __loadMonthDoc(monthKey);
+
+    const skuN = normSku(sku);
+    let p = (data.products || []).find(x => normSku(x.sku) === skuN);
+    if(!p){
+      p = { sku: skuN, initial: 0, movements: [] };
+      data.products.push(p);
+    }
+    if(!Array.isArray(p.movements)) p.movements = [];
+
+    const idx = p.movements.findIndex(m => String(m.type)===String(type) && String(m.sourceId)===String(sourceId));
+    const mov = {
+      type,
+      qty: Number(qty || 0),
+      date: String(date || new Date().toISOString().slice(0,10)),
+      sourceId: String(sourceId || ""),
+      by: String(by || "OFFICE"),
+      uid: String(uid || "office-sync")
+    };
+    if(idx >= 0) p.movements[idx] = mov;
+    else p.movements.push(mov);
+
+    __scheduleMonthSave(monthKey);
+  }
+
+// --- Office batch history listener (handles qty edits that log as history messages) ---
+  function parseInvQtyUpdateMsg(msg){
+    // Example: "INV QTY UPDATE: SKU2228 TANKLESS ELECTRIC WATER HEATER | 2 -> 1"
+    const m = String(msg||"").match(/^INV QTY UPDATE:\s*(.*?)\s*\|\s*(\d+)\s*->\s*(\d+)\s*$/i);
+    if(!m) return null;
+    return { sku: m[1], oldQty: Number(m[2]), newQty: Number(m[3]) };
+  }
+
+  async function syncBatchQtyFromHistory(batchKey, historyKey, historyVal){
+    if(!batchKey || !historyKey || !historyVal) return;
+    const msg = historyVal.msg || historyVal.message || "";
+    const parsed = parseInvQtyUpdateMsg(msg);
+    if(!parsed) return;
+
+    if(!window.__officeHistoryProcessed) window.__officeHistoryProcessed = {};
+    if(!window.__officeHistoryProcessed[batchKey]) window.__officeHistoryProcessed[batchKey] = new Set();
+    if(window.__officeHistoryProcessed[batchKey].has(historyKey)) return;
+    window.__officeHistoryProcessed[batchKey].add(historyKey);
+
+    // Need month/date/by; take from meta cache filled by syncBatchInventory
+    const meta = (window.__officeBatchMetaCache && window.__officeBatchMetaCache[batchKey]) || null;
+    if(!meta){
+      console.warn("Batch meta not ready for history update; skipping for now", batchKey, msg);
+      return;
+    }
+    const sku = normSku(parsed.sku);
+    const qty = Number(parsed.newQty);
+    if(!sku || !Number.isFinite(qty) || qty < 0) return;
+
+    await applyMovementToMonth({ uid:"office-sync", 
+      monthKey: meta.monthKey,
+      sku,
+      type: "picking",
+      sourceId: batchKey,
+      qty,
+      date: meta.date,
+      by: meta.by
+    });
+  }
+
+async function syncReturnRecord(regId, r){
+    if(!regId || !r) return;
+    if(String(r.mode||"").toUpperCase() !== "RETURN") return;
+
+    const dateClean = r.dateClean || new Date().toISOString().slice(0,10);
+    const monthKey = dateToMonthKey(dateClean);
+    if(!monthKey) return;
+
+    const by = r.user || "OFFICE";
+    const prods = splitProds(r.prods);
+    if(!prods.length) return;
+
+    const counts = {};
+    for(const p of prods){
+      const sku = normSku(p);
+      counts[sku] = (counts[sku] || 0) + 1;
+    }
+    for(const [sku, qty] of Object.entries(counts)){
+      await applyMovementToMonth({ uid:"office-sync", 
+        monthKey,
+        sku,
+        type: "returns",
+        sourceId: regId,
+        qty,
+        date: String(dateClean).slice(0,10),
+        by
+      });
+    }
+  }
+
+  
+  async function ensureOfficeAuthInteractive(){
+    if(officeAuth.currentUser) return true;
+    if(!auth.currentUser) return false;
+    const email = auth.currentUser.email || "";
+    const pass = prompt("Para sincronizar com o OFFICE, introduz a password do utilizador " + email + " (login Office).");
+    if(!pass) return false;
+    try{
+      await signInWithEmailAndPassword(officeAuth, email, pass);
+      return !!officeAuth.currentUser;
+    }catch(e){
+      alert("Falha no login do OFFICE: " + (e?.message || e));
+      return false;
+    }
+  }
+
+async function startOfficeSync(){
+    const badge = document.getElementById("officeSyncBadge");
+    const ok = await ensureOfficeAuthInteractive();
+    if(!ok){
+      if(badge) badge.textContent = "Office sync: OFF (no Office login)";
+      console.warn("Office auth not signed in; sync not started.");
+      return;
+    }
+    if(badge) badge.textContent = "Office sync: ON";
+
+    if(officeSyncStarted) return;
+    if(!auth.currentUser) return;
+    if(!officeAuth.currentUser){
+      console.warn("Office auth not signed in yet; sync not started.");
+      return;
+    }
+    officeSyncStarted = true;
+    console.log("Office->Inventory sync started.");
+
+    // Watch active_batches from TODAY onward (includes existing batches with today's date)
+    const startStr = new Date().toISOString().slice(0,10);
+    const batchesQ = query(rtdbRef(officeRtdb, "active_batches"), orderByChild("dateClean"), startAt(startStr));
+    onChildAdded(batchesQ, (snap)=>{
+      const batchKey = snap.key;
+      const batchData = snap.val() || {};
+      // attach a live listener to this batch for any inventory changes
+      const batchRef = rtdbRef(officeRtdb, `active_batches/${batchKey}`);
+      onValue(batchRef, (s2)=>{
+        const b = s2.val() || {};
+        syncBatchInventory(batchKey, b).catch(err=>console.error("syncBatchInventory failed", err));
+      });
+
+      // also listen to history messages (qty edits are logged here)
+      const histRef = rtdbRef(officeRtdb, `active_batches/${batchKey}/history`);
+      onChildAdded(histRef, (hs)=>{
+        syncBatchQtyFromHistory(batchKey, hs.key, hs.val()).catch(err=>console.error("syncBatchQtyFromHistory failed", err));
+      });
+    });
+
+    // Watch returns in registos (only recent by dateClean)
+    const regsQ = query(rtdbRef(officeRtdb, "registos"), orderByChild("dateClean"), startAt(startStr));
+    onChildAdded(regsQ, (snap)=>{
+      syncReturnRecord(snap.key, snap.val()).catch(err=>console.error("syncReturnRecord failed", err));
+    });
+    onChildChanged(regsQ, (snap)=>{
+      syncReturnRecord(snap.key, snap.val()).catch(err=>console.error("syncReturnRecord change failed", err));
+    });
+  }
   onAuthStateChanged(auth, async (user) => {
     setAuthUI(user);
+    // try start sync if both projects are authenticated
+    try { startOfficeSync(); } catch(e) { console.warn(e); }
 
     // file:// warning
     const warn = document.getElementById("fileProtoWarn");
@@ -2508,6 +2759,23 @@ Still not matched (${stillMissing.length}): ${stillMissing.slice(0, 20).join(', 
         XLSX.writeFile(wb, `movements_${currentMonth}.xlsx`);
     }
 
+  function __officeMovementsOnly(){
+    const rows = getAllMovementsBase();
+    return rows.filter(r => String(r.uid||"") === "office-sync");
+  }
+
+  function exportOfficeMovementsCSV(){
+    const rows = __officeMovementsOnly();
+    const headers = Object.keys(rows[0] || {date:"", sku:"", type:"", qty:"", sourceId:"", by:"", uid:""});
+    downloadCSV(headers, rows, `office_movements_${currentMonth}_${new Date().toISOString().slice(0,10)}.csv`);
+  }
+
+  function exportOfficeMovementsXLSX(){
+    const rows = __officeMovementsOnly();
+    exportXLSX(rows, `office_movements_${currentMonth}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+
 function exportWarehouseCSV() {
         if (!warehouseItems.length) { alert('No warehouse data to export.'); return; }
         const headers = ['produto','posicao','dimensoes','peso','volume'];
@@ -2520,6 +2788,12 @@ function exportWarehouseCSV() {
         }));
         downloadCSV(headers, rows, `warehouse_master_${new Date().toISOString().slice(0,10)}.csv`);
     }
+
+
+  // Expose module functions for inline onclick handlers
+  window.startOfficeSync = startOfficeSync;
+  window.exportOfficeMovementsCSV = exportOfficeMovementsCSV;
+  window.exportOfficeMovementsXLSX = exportOfficeMovementsXLSX;
 
 </script>
 </body>
