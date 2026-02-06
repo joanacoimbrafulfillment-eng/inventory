@@ -393,11 +393,24 @@
 <div id="historyModal" class="modal"><div class="modal-content"><h3 id="histTitle">Movements</h3><table id="histTable"><thead><tr><th>Date</th><th>Type</th><th>Qty</th><th>Note</th><th>Actions</th></tr></thead><tbody id="histBody"></tbody></table><br><button class="btn btn-danger" onclick="closeModal()">Close</button></div></div>
 
 
+
+<script>
+// Wrappers so inline onclick handlers always exist even with module scoping
+function startOfficeSync(){
+  if (window.__startOfficeSyncImpl) return window.__startOfficeSyncImpl();
+  console.warn("Office sync not ready yet.");
+}
+function doLogin(){
+  if (window.__doLoginImpl) return window.__doLoginImpl();
+  console.warn("Login handler not ready yet.");
+}
+</script>
+
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
   import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
   import { initializeFirestore, doc, getDoc, setDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-import { getDatabase, ref as rtdbRef, onChildAdded, onChildChanged, onValue, query, orderByChild, startAt } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
+import { getDatabase, ref as rtdbRef, onChildAdded, onChildChanged, onChildRemoved, onValue, query, orderByChild, startAt, get } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBvJIwx6KDSrwdnJ1o8vqvttsv9dzycY6g",
@@ -646,7 +659,15 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
     if(!batchKey || !historyKey || !historyVal) return;
     const msg = historyVal.msg || historyVal.message || "";
     const parsed = parseInvQtyUpdateMsg(msg);
-    if(!parsed) return;
+    if(!parsed){
+      // fallback: resync inventory snapshot if message format differs
+      try{
+        const metaSnap = await get(rtdbRef(officeRtdb, `active_batches/${batchKey}`));
+        const b = metaSnap.val() || {};
+        if(b && b.inventory) await syncBatchInventory(batchKey, b);
+      }catch(e){ console.warn('History fallback resync failed', e); }
+      return;
+    }
 
     if(!window.__officeHistoryProcessed) window.__officeHistoryProcessed = {};
     if(!window.__officeHistoryProcessed[batchKey]) window.__officeHistoryProcessed[batchKey] = new Set();
@@ -674,6 +695,58 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
     });
   }
 
+
+  // --- UNDO logic: if a batch/return is deleted in Office, remove the corresponding movements in Inventory ---
+  async function removeOfficeBatchMovements(batchKey){
+    try{
+      const idx = (window.__officeBatchInvIndex && window.__officeBatchInvIndex[batchKey]) || (window.__officeBatchMetaCache && window.__officeBatchMetaCache[batchKey]) || null;
+      const monthKey = idx?.monthKey;
+      if(!monthKey){
+        console.warn("No monthKey cached for deleted batch; cannot undo", batchKey);
+        return;
+      }
+      const skus = Array.isArray(idx?.skus) ? idx.skus : [];
+      if(!skus.length){
+        console.warn("No SKU list cached for deleted batch; cannot undo", batchKey);
+        return;
+      }
+      for(const sku of skus){
+        await removeMovementFromMonth({
+          monthKey,
+          sku,
+          uid: "office-sync",
+          type: "picking",
+          sourceId: batchKey
+        });
+      }
+      if(window.__officeBatchInvIndex) delete window.__officeBatchInvIndex[batchKey];
+      if(window.__officeBatchMetaCache) delete window.__officeBatchMetaCache[batchKey];
+      console.log("Undid movements for deleted batch", batchKey);
+    }catch(err){
+      console.error("removeOfficeBatchMovements failed", err);
+    }
+  }
+
+  async function removeOfficeReturnMovements(regId, rec){
+    try{
+      const dc = String(rec?.dateClean || "").slice(0,10);
+      const monthKey = dateToMonthKey(dc || new Date().toISOString().slice(0,10));
+      const items = rec?.items || rec?.inventory || rec?.products || {};
+      const skus = Object.keys(items || {}).map(normSku).filter(Boolean);
+      for(const sku of skus){
+        await removeMovementFromMonth({
+          monthKey,
+          sku,
+          uid: "office-sync",
+          type: "return",
+          sourceId: regId
+        });
+      }
+      console.log("Undid movements for deleted return record", regId);
+    }catch(err){
+      console.error("removeOfficeReturnMovements failed", err);
+    }
+  }
 async function syncReturnRecord(regId, r){
     if(!regId || !r) return;
     if(String(r.mode||"").toUpperCase() !== "RETURN") return;
@@ -705,7 +778,50 @@ async function syncReturnRecord(regId, r){
   }
 
   
-  async function ensureOfficeAuthInteractive(){
+  
+  
+
+
+  // --- Sync a batch's inventory snapshot into Inventory Firestore as movements ---
+  async function syncBatchInventory(batchKey, batchData){
+    if(!batchKey || !batchData) return;
+    const dateClean = batchData.dateClean || (batchData.createdAt ? String(batchData.createdAt).slice(0,10) : null) || new Date().toISOString().slice(0,10);
+    const monthKey = dateToMonthKey(dateClean);
+    if(!monthKey) return;
+
+    const by = batchData.createdBy || batchData.pickedBy || "OFFICE";
+    // cache meta for history-triggered updates
+    if(!window.__officeBatchMetaCache) window.__officeBatchMetaCache = {};
+    window.__officeBatchMetaCache[batchKey] = { monthKey, date: String(dateClean).slice(0,10), by };
+
+    const inv = batchData.inventory || {};
+    // keep an index so we can undo movements if the batch is deleted in Office
+    if(!window.__officeBatchInvIndex) window.__officeBatchInvIndex = {};
+    const __skusSeen = [];
+
+    // inv may be {SKU:{q:1}} or {SKU:1}
+    for(const [k,v] of Object.entries(inv)){
+      const sku = normSku(k);
+      const qty = (typeof v === "object" && v !== null) ? Number(v.q ?? v.qty ?? 0) : Number(v ?? 0);
+      if(!sku || !Number.isFinite(qty) || qty < 0) continue;
+      __skusSeen.push(sku);
+
+      await applyMovementToMonth({
+        monthKey,
+        sku,
+        type: "picking",
+        sourceId: batchKey,
+        qty,
+        date: String(dateClean).slice(0,10),
+        by,
+        uid: "office-sync"
+      });
+    }
+    // store index for delete/undo
+    window.__officeBatchInvIndex[batchKey] = { monthKey, date: String(dateClean).slice(0,10), by, skus: Array.from(new Set(__skusSeen)) };
+  }
+
+async function ensureOfficeAuthInteractive(){
     if(officeAuth.currentUser) return true;
     if(!auth.currentUser) return false;
     const email = auth.currentUser.email || "";
@@ -739,24 +855,55 @@ async function startOfficeSync(){
     officeSyncStarted = true;
     console.log("Office->Inventory sync started.");
 
-    // Watch active_batches from TODAY onward (includes existing batches with today's date)
+    // Watch active_batches (root). We filter by dateClean in code so we never miss new batches.
     const startStr = new Date().toISOString().slice(0,10);
-    const batchesQ = query(rtdbRef(officeRtdb, "active_batches"), orderByChild("dateClean"), startAt(startStr));
-    onChildAdded(batchesQ, (snap)=>{
-      const batchKey = snap.key;
-      const batchData = snap.val() || {};
-      // attach a live listener to this batch for any inventory changes
-      const batchRef = rtdbRef(officeRtdb, `active_batches/${batchKey}`);
-      onValue(batchRef, (s2)=>{
-        const b = s2.val() || {};
+
+    const batchesRef = rtdbRef(officeRtdb, "active_batches");
+
+    function shouldSyncBatch(b){
+      const dc = String(b?.dateClean || "").slice(0,10);
+      return dc && dc >= startStr;
+    }
+
+    function attachBatchListeners(batchKey){
+      if(!window.__officeBatchAttached) window.__officeBatchAttached = {};
+      if(window.__officeBatchAttached[batchKey]) return;
+      window.__officeBatchAttached[batchKey] = true;
+
+      // Listen to inventory node (source of truth)
+      const invRef = rtdbRef(officeRtdb, `active_batches/${batchKey}/inventory`);
+      onValue(invRef, async (s2)=>{
+        const inv = s2.val() || {};
+        const metaSnap = await get(rtdbRef(officeRtdb, `active_batches/${batchKey}`));
+        const b = metaSnap.val() || {};
+        if(!shouldSyncBatch(b)) return;
+        b.inventory = inv;
         syncBatchInventory(batchKey, b).catch(err=>console.error("syncBatchInventory failed", err));
       });
 
-      // also listen to history messages (qty edits are logged here)
+      // Listen to history messages; if qty edit is logged here, we trigger a resync (or set qty directly if parse succeeds)
       const histRef = rtdbRef(officeRtdb, `active_batches/${batchKey}/history`);
       onChildAdded(histRef, (hs)=>{
         syncBatchQtyFromHistory(batchKey, hs.key, hs.val()).catch(err=>console.error("syncBatchQtyFromHistory failed", err));
       });
+    }
+
+    onChildAdded(batchesRef, (snap)=>{
+      const batchKey = snap.key;
+      const b = snap.val() || {};
+      if(shouldSyncBatch(b)) attachBatchListeners(batchKey);
+    });
+
+    onChildChanged(batchesRef, (snap)=>{
+      const batchKey = snap.key;
+      const b = snap.val() || {};
+      if(shouldSyncBatch(b)) attachBatchListeners(batchKey);
+    });
+
+    onChildRemoved(batchesRef, (snap)=>{
+      const batchKey = snap.key;
+      // if a batch that was synced gets deleted, undo the movements in Inventory
+      removeOfficeBatchMovements(batchKey);
     });
 
     // Watch returns in registos (only recent by dateClean)
@@ -766,6 +913,9 @@ async function startOfficeSync(){
     });
     onChildChanged(regsQ, (snap)=>{
       syncReturnRecord(snap.key, snap.val()).catch(err=>console.error("syncReturnRecord change failed", err));
+    });
+    onChildRemoved(regsQ, (snap)=>{
+      removeOfficeReturnMovements(snap.key, snap.val() || {});
     });
   }
   onAuthStateChanged(auth, async (user) => {
@@ -2791,7 +2941,7 @@ function exportWarehouseCSV() {
 
 
   // Expose module functions for inline onclick handlers
-  window.startOfficeSync = startOfficeSync;
+  window.__startOfficeSyncImpl = startOfficeSync;
   window.exportOfficeMovementsCSV = exportOfficeMovementsCSV;
   window.exportOfficeMovementsXLSX = exportOfficeMovementsXLSX;
 
