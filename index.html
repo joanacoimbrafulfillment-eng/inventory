@@ -748,12 +748,16 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
     }
   }
 async function syncReturnRecord(regId, r){
+    const todayStr = new Date().toISOString().slice(0,10);
+    const dateStr = normDate10(rec?.dateClean || rec?.createdAt) || todayStr;
+
     if(!regId || !r) return;
     if(String(r.mode||"").toUpperCase() !== "RETURN") return;
 
     const dateClean = r.dateClean || new Date().toISOString().slice(0,10);
-    const monthKey = dateToMonthKey(dateClean);
-    if(!monthKey) return;
+    const todayStr2 = new Date().toISOString().slice(0,10);
+    const monthKey = todayStr2.slice(0,7);
+    const movDate = todayStr2;
 
     const by = r.user || "OFFICE";
     const prods = splitProds(r.prods);
@@ -771,7 +775,7 @@ async function syncReturnRecord(regId, r){
         type: "returns",
         sourceId: regId,
         qty,
-        date: String(dateClean).slice(0,10),
+        date: dateStr,
         by
       });
     }
@@ -792,7 +796,7 @@ async function syncReturnRecord(regId, r){
     const by = batchData.createdBy || batchData.pickedBy || "OFFICE";
     // cache meta for history-triggered updates
     if(!window.__officeBatchMetaCache) window.__officeBatchMetaCache = {};
-    window.__officeBatchMetaCache[batchKey] = { monthKey, date: String(dateClean).slice(0,10), by };
+    window.__officeBatchMetaCache[batchKey] = { monthKey, date: dateStr, by };
 
     const inv = batchData.inventory || {};
     // keep an index so we can undo movements if the batch is deleted in Office
@@ -812,13 +816,13 @@ async function syncReturnRecord(regId, r){
         type: "picking",
         sourceId: batchKey,
         qty,
-        date: String(dateClean).slice(0,10),
+        date: dateStr,
         by,
         uid: "office-sync"
       });
     }
     // store index for delete/undo
-    window.__officeBatchInvIndex[batchKey] = { monthKey, date: String(dateClean).slice(0,10), by, skus: Array.from(new Set(__skusSeen)) };
+    window.__officeBatchInvIndex[batchKey] = { monthKey, date: dateStr, by, skus: Array.from(new Set(__skusSeen)) };
   }
 
 async function ensureOfficeAuthInteractive(){
@@ -856,14 +860,22 @@ async function startOfficeSync(){
     console.log("Office->Inventory sync started.");
 
     // Watch active_batches (root). We filter by dateClean in code so we never miss new batches.
-    const startStr = new Date().toISOString().slice(0,10);
+    
+    const todayStr = new Date().toISOString().slice(0,10);
 
-    const batchesRef = rtdbRef(officeRtdb, "active_batches");
-
-    function shouldSyncBatch(b){
-      const dc = String(b?.dateClean || "").slice(0,10);
-      return dc && dc >= startStr;
+    function normDate10(x){
+      const s = String(x||"");
+      // supports "YYYY-MM-DD", "YYYY-MM-DD HH:MM:SS", ISO
+      return s.length >= 10 ? s.slice(0,10) : "";
     }
+
+    function isFromTodayOrLaterByCreatedAt(obj){
+      const ca = normDate10(obj?.createdAt);
+      return ca && ca >= todayStr;
+    }
+const batchesRef = rtdbRef(officeRtdb, "active_batches");
+
+    function shouldSyncBatch(b){ return isFromTodayOrLaterByCreatedAt(b); }
 
     function attachBatchListeners(batchKey){
       if(!window.__officeBatchAttached) window.__officeBatchAttached = {};
@@ -907,7 +919,31 @@ async function startOfficeSync(){
     });
 
     // Watch returns in registos (only recent by dateClean)
-    const regsQ = query(rtdbRef(officeRtdb, "registos"), orderByChild("dateClean"), startAt(startStr));
+
+    function shouldSyncReturn(r){ return isFromTodayOrLaterByCreatedAt(r); }
+
+    onChildAdded(returnsRef, (snap)=>{
+      const r = snap.val() || {};
+      if(!shouldSyncReturn(r)) return;
+      // only returns mode
+      if(String(r.mode||"").toUpperCase() !== "RETURN") return;
+      syncReturnRecord(snap.key, r).catch(err=>console.error("syncReturnRecord failed", err));
+    });
+
+    onChildChanged(returnsRef, (snap)=>{
+      const r = snap.val() || {};
+      if(!shouldSyncReturn(r)) return;
+      if(String(r.mode||"").toUpperCase() !== "RETURN") return;
+      syncReturnRecord(snap.key, r).catch(err=>console.error("syncReturnRecord failed", err));
+    });
+
+    onChildRemoved(returnsRef, (snap)=>{
+      const r = snap.val() || {};
+      if(!shouldSyncReturn(r)) return;
+      if(String(r.mode||"").toUpperCase() !== "RETURN") return;
+      cancelReturnRecord(snap.key, r).catch(err=>console.error("cancelReturnRecord failed", err));
+    });
+    const regsQ = query(rtdbRef(officeRtdb, "registos"), orderByChild("dateClean"), startAt(todayStr));
     onChildAdded(regsQ, (snap)=>{
       syncReturnRecord(snap.key, snap.val()).catch(err=>console.error("syncReturnRecord failed", err));
     });
@@ -2366,6 +2402,32 @@ function processBulkFromSelect(id) {
     save(); renderAll();
     textEl.value = "";
 }
+
+  async function cancelReturnRecord(regKey, rec){
+    if(!regKey || !rec) return;
+    const dateClean = rec.dateClean || (rec.createdAt ? String(rec.createdAt).slice(0,10) : new Date().toISOString().slice(0,10));
+    const monthKey = dateToMonthKey(String(dateClean).slice(0,10)) || String(dateClean).slice(0,7);
+    const by = rec.user || rec.by || "OFFICE";
+    const items = rec.items || rec.products || rec.inventory || {};
+    for(const [k,v] of Object.entries(items)){
+      const sku = normSku(k);
+      const qty = (typeof v === "object" && v !== null) ? Number(v.q ?? v.qty ?? v.quantity ?? 0) : Number(v ?? 0);
+      if(!sku || !Number.isFinite(qty)) continue;
+      // set qty=0 to neutralize
+      await applyMovementToMonth({
+        monthKey,
+        sku,
+        type: "returns",
+        sourceId: regKey,
+        qty: 0,
+        date: String(dateClean).slice(0,10),
+        by,
+        uid: "office-sync"
+      });
+    }
+  }
+
+
 
 
     function showHistory(i) {
