@@ -1133,8 +1133,7 @@ async function startOfficeSync(){
         if (currentMonth && allData[currentMonth]) {
             products = reconcileWithMaster(allData[currentMonth].products || []);
             allData[currentMonth].products = products;
-            save();
-            renderAll();
+            save(); flushSaveMonth(); renderAll();
         } else {
             // No month loaded yet; just keep datalist consistent
             products = reconcileWithMaster(products || []);
@@ -1358,7 +1357,7 @@ async function startOfficeSync(){
         if (!window.fb || !currentMonth) return;
         if (userRole === 'pl') return; // PL is read-only
         if (saveTimer) clearTimeout(saveTimer);
-        saveTimer = setTimeout(flushSaveMonth, 600);
+        saveTimer = setTimeout(flushSaveMonth, 150);
     }
 
 
@@ -1696,10 +1695,10 @@ async function startOfficeSync(){
             });
             document.getElementById('inputToConfirm').value = "";
         }
-        save(); renderAll();
+        save(); flushSaveMonth(); renderAll();
     }
 
-    function clearToConfirm() { if(confirm("Clear ALL 'TO CONFIRM' values?")) { products.forEach(p => p.toConfirm = 0); save(); renderAll(); } }
+    function clearToConfirm() { if(confirm("Clear ALL 'TO CONFIRM' values?")) { products.forEach(p => p.toConfirm = 0); save(); flushSaveMonth(); renderAll(); } }
 
     function renderShipments() {
         const body = document.getElementById('bodyShipments');
@@ -1814,8 +1813,7 @@ async function startOfficeSync(){
 
         // Refresh open list + save
         await loadOpenSentLogsFromPreviousMonths();
-        save();
-        renderAll();
+        save(); flushSaveMonth(); renderAll();
     }
 
 
@@ -1827,7 +1825,7 @@ async function startOfficeSync(){
         const note = (status === 'SENT' && document.getElementById('shipNote')) ? (document.getElementById('shipNote').value || '').trim() : '';
         if(!date || !sku || isNaN(qty)) return alert("Check fields");
         logs.push({ date, sku, qty, status, note, id: Date.now(), by: currentActorEmail(), uid: currentActorUid() });
-        save(); renderAll();
+        save(); flushSaveMonth(); renderAll();
         document.getElementById(prefix + 'Sku').value = ''; 
         document.getElementById(prefix + 'Qty').value = '';
         if (status === 'SENT' && document.getElementById('shipNote')) document.getElementById('shipNote').value = '';
@@ -1850,7 +1848,7 @@ async function startOfficeSync(){
             const { sku, qty } = parsed;
             logs.push({ date, sku, qty: Math.abs(qty), status, note, id: base + i, by: currentActorEmail(), uid: currentActorUid() });
         });
-        save(); renderAll();
+        save(); flushSaveMonth(); renderAll();
         if(textEl) textEl.value = "";
     }
 
@@ -1908,8 +1906,7 @@ async function startOfficeSync(){
             src.receivedUid = currentActorUid();
         }
 
-        save();
-        renderAll();
+        save(); flushSaveMonth(); renderAll();
     }
 
     function editLog(idx) {
@@ -1922,7 +1919,7 @@ async function startOfficeSync(){
                 const m = p.movements.find(move => move.logId === log.id);
                 if(m) { m.qty = nQ; m.date = log.arrivalDate; }
             }
-            save(); renderAll();
+            save(); flushSaveMonth(); renderAll();
         }
     }
 
@@ -1941,7 +1938,7 @@ async function startOfficeSync(){
     function renderManagement() {
         const bodyM = document.getElementById('bodyManagement'); bodyM.innerHTML = '';
         products.forEach((p, i) => {
-            bodyM.innerHTML += `<tr><td>${p.sku}</td><td><input type="number" class="input-single" style="width:40px" value="${p.initial}" onchange="products[${i}].initial=parseInt(this.value);save();renderAll()"></td><td>${sum(p,'RECEIVED')}</td><td>${sum(p,'adjust')}</td><td>${sum(p,'picking')}</td><td>${sum(p,'amsped')}</td><td>${sum(p,'b2b')}</td><td><button onclick="showHistory(${i})">📜</button></td></tr>`;
+            bodyM.innerHTML += `<tr><td>${p.sku}</td><td><input type="number" class="input-single" style="width:40px" value="${p.initial}" onchange="products[${i}].initial=parseInt(this.value);save(); flushSaveMonth(); renderAll()"></td><td>${sum(p,'RECEIVED')}</td><td>${sum(p,'adjust')}</td><td>${sum(p,'picking')}</td><td>${sum(p,'amsped')}</td><td>${sum(p,'b2b')}</td><td><button onclick="showHistory(${i})">📜</button></td></tr>`;
         });
     }
 
@@ -2360,7 +2357,7 @@ async function startOfficeSync(){
         const k = type.charAt(0).toUpperCase() + type.slice(1);
         const s = document.getElementById(`single${k}Sku`).value.trim(), q = parseInt(document.getElementById(`single${k}Qty`).value), d = document.getElementById(`date${k}`).value;
         const p = findProd(s);
-        if(p && !isNaN(q)) { p.movements.push({ type, qty: (type==='adjust'?q:Math.abs(q)), date: d, note: document.getElementById(`single${k}Note`)?.value || '' }); save(); renderAll(); document.getElementById(`single${k}Sku`).value=""; }
+        if(p && !isNaN(q)) { p.movements.push({ type, qty: (type==='adjust'?q:Math.abs(q)), date: d, note: document.getElementById(`single${k}Note`)?.value || '' }); save(); flushSaveMonth(); renderAll(); document.getElementById(`single${k}Sku`).value=""; }
     }
 
     function processBulk(type) {
@@ -2372,12 +2369,12 @@ async function startOfficeSync(){
             const prod = findProd(sku);
             if(prod) prod.movements.push({ type, qty: (type==='adjust'?qty:Math.abs(qty)), date, by: currentActorEmail(), uid: currentActorUid() });
         });
-        save(); renderAll(); document.getElementById('input' + k).value = "";
+        save(); flushSaveMonth(); renderAll(); document.getElementById('input' + k).value = "";
     }
 
     function addSingleFromSelect(id) {
         const t = document.getElementById('type'+id).value, s = document.getElementById('single'+id+'Sku').value.trim(), q = parseInt(document.getElementById('single'+id+'Qty').value), d = document.getElementById('date'+id).value;
-        const p = findProd(s); if(p&&!isNaN(q)) { p.movements.push({type:t, qty:Math.abs(q), date:d, by: currentActorEmail(), uid: currentActorUid() }); save(); renderAll(); document.getElementById('single'+id+'Sku').value=""; }
+        const p = findProd(s); if(p&&!isNaN(q)) { p.movements.push({type:t, qty:Math.abs(q), date:d, by: currentActorEmail(), uid: currentActorUid() }); save(); flushSaveMonth(); renderAll(); document.getElementById('single'+id+'Sku').value=""; }
     }
 
 
@@ -2398,7 +2395,7 @@ function processBulkFromSelect(id) {
         if(p) p.movements.push({ type: t, qty: Math.abs(qty), date: d, by: currentActorEmail(), uid: currentActorUid() });
     });
 
-    save(); renderAll();
+    save(); flushSaveMonth(); renderAll();
     textEl.value = "";
 }
 
@@ -2415,10 +2412,10 @@ function processBulkFromSelect(id) {
     }
 
     function filterTable(tid, sid) { const q = document.getElementById(sid).value.toLowerCase(); document.querySelectorAll(`#${tid} tr`).forEach(r => r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none'); }
-    function deleteLog(i) { logs.splice(i,1); save(); renderAll(); }
-    function deleteMove(pi, mi) { products[pi].movements.splice(mi,1); save(); renderAll(); }
+    function deleteLog(i) { logs.splice(i,1); save(); flushSaveMonth(); renderAll(); }
+    function deleteMove(pi, mi) { products[pi].movements.splice(mi,1); save(); flushSaveMonth(); renderAll(); }
     function closeModal() { document.getElementById('historyModal').style.display='none'; }
-    function resetMonth() { if(confirm("WIPE MONTH?")) { products.forEach(p => p.movements = []); logs=[]; save(); renderAll(); } }
+    function resetMonth() { if(confirm("WIPE MONTH?")) { products.forEach(p => p.movements = []); logs=[]; save(); flushSaveMonth(); renderAll(); } }
     function addNewProductMaster() {
         const prod = (prompt("Produto:") || '').toString().trim();
         if (!prod) return;
@@ -2751,8 +2748,7 @@ function addWarehouseRow() {
             }
         });
 
-        save();
-        renderAll();
+        save(); flushSaveMonth(); renderAll();
 
         let msg = `Imported initial quantities for ${applied} products.`;
         if (changedMaster) msg += `
