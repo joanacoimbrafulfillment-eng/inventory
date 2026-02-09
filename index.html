@@ -856,7 +856,7 @@ async function startOfficeSync(){
     console.log("Office->Inventory sync started.");
 
     // Watch active_batches (root). We filter by dateClean in code so we never miss new batches.
-    const startStr = new Date().toISOString().slice(0,10);
+    const startStr = "2026-02-06";
 
     const batchesRef = rtdbRef(officeRtdb, "active_batches");
 
