@@ -800,7 +800,7 @@ async function syncReturnRecord(regId, r){
         type: "returns",
         sourceId: regId,
         qty,
-        date: movementDate,
+        date: String(dateClean).slice(0,10),
         by
       });
     }
@@ -814,17 +814,14 @@ async function syncReturnRecord(regId, r){
   // --- Sync a batch's inventory snapshot into Inventory Firestore as movements ---
   async function syncBatchInventory(batchKey, batchData){
     if(!batchKey || !batchData) return;
-    // We want to reserve/abate stock immediately when the batch is created/updated in Office,
-    // even if Office dateClean is in the future. So we apply the movement on TODAY in the inventory.
-    const todayStr = new Date().toISOString().slice(0,10);
-    const dateClean = batchData.dateClean || (batchData.createdAt ? String(batchData.createdAt).slice(0,10) : null) || todayStr;
-    const monthKey = dateToMonthKey(todayStr);
+    const dateClean = batchData.dateClean || (batchData.createdAt ? String(batchData.createdAt).slice(0,10) : null) || new Date().toISOString().slice(0,10);
+    const monthKey = dateToMonthKey(dateClean);
     if(!monthKey) return;
-    const movementDate = todayStr;
+
     const by = batchData.createdBy || batchData.pickedBy || "OFFICE";
     // cache meta for history-triggered updates
     if(!window.__officeBatchMetaCache) window.__officeBatchMetaCache = {};
-    window.__officeBatchMetaCache[batchKey] = { monthKey, date: movementDate, by };
+    window.__officeBatchMetaCache[batchKey] = { monthKey, date: String(dateClean).slice(0,10), by };
 
     const inv = batchData.inventory || {};
     // keep an index so we can undo movements if the batch is deleted in Office
@@ -845,13 +842,13 @@ async function syncReturnRecord(regId, r){
         type: "picking",
         sourceId: batchKey,
         qty,
-        date: movementDate,
+        date: String(dateClean).slice(0,10),
         by,
         uid: "office-sync"
       });
     }
     // store index for delete/undo
-    window.__officeBatchInvIndex[batchKey] = { monthKey, date: movementDate, by, skus: Array.from(new Set(__skusSeen)) };
+    window.__officeBatchInvIndex[batchKey] = { monthKey, date: String(dateClean).slice(0,10), by, skus: Array.from(new Set(__skusSeen)) };
   }
 
 async function ensureOfficeAuthInteractive(){
@@ -895,9 +892,7 @@ async function startOfficeSync(){
 
     function shouldSyncBatch(b){
       const dc = String(b?.dateClean || "").slice(0,10);
-      const ca = String(b?.createdAt || "").slice(0,10);
-      // startStr is the minimum date (inclusive). We allow sync if either dateClean OR createdAt meets it.
-      return (dc && dc >= startStr) || (ca && ca >= startStr);
+      return dc && dc >= startStr;
     }
 
     function attachBatchListeners(batchKey){
