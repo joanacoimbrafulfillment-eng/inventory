@@ -568,7 +568,7 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
   }
 
   function normSku(s){
-    return String(s||"").trim().toUpperCase();
+    return String(s||"").trim().toLowerCase();
   }
 
   function splitProds(str){
@@ -624,10 +624,11 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
     if(!monthKey || !sku) return;
     const data = await __loadMonthDoc(monthKey);
 
-    const skuN = normSku(sku);
-    let p = (data.products || []).find(x => normSku(x.sku) === skuN);
+    const skuRaw = String(sku||"").trim();
+    const skuKey = normSku(skuRaw);
+    let p = (data.products || []).find(x => normSku(x.sku) === skuKey);
     if(!p){
-      p = { sku: skuN, initial: 0, movements: [] };
+      p = { sku: skuRaw, initial: 0, movements: [] };
       data.products.push(p);
     }
     if(!Array.isArray(p.movements)) p.movements = [];
@@ -647,7 +648,30 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
     __scheduleMonthSave(monthKey);
   }
 
-// --- Office batch history listener (handles qty edits that log as history messages) ---
+// --- Office batch history 
+  async function removeMovementFromMonth({ monthKey, sku, uid="office-sync", type=null, sourceId=null }){
+    if(!monthKey || !sku) return;
+    const data = await __loadMonthDoc(monthKey);
+
+    const skuRaw = String(sku||"").trim();
+    const skuKey = normSku(skuRaw);
+    const p = (data.products || []).find(x => normSku(x.sku) === skuKey);
+    if(!p || !Array.isArray(p.movements)) return;
+
+    const before = p.movements.length;
+    p.movements = p.movements.filter(m => {
+      if(String(m.uid || "manual") !== String(uid || "office-sync")) return true;
+      if(type != null && String(m.type || "") !== String(type)) return true;
+      if(sourceId != null && String(m.sourceId || "") !== String(sourceId)) return true;
+      return false; // remove
+    });
+
+    if(p.movements.length !== before){
+      __scheduleMonthSave(monthKey);
+    }
+  }
+
+// listener (handles qty edits that log as history messages) ---
   function parseInvQtyUpdateMsg(msg){
     // Example: "INV QTY UPDATE: SKU2228 TANKLESS ELECTRIC WATER HEATER | 2 -> 1"
     const m = String(msg||"").match(/^INV QTY UPDATE:\s*(.*?)\s*\|\s*(\d+)\s*->\s*(\d+)\s*$/i);
@@ -680,7 +704,8 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
       console.warn("Batch meta not ready for history update; skipping for now", batchKey, msg);
       return;
     }
-    const sku = normSku(parsed.sku);
+    const sku = String(parsed.sku||"").trim();
+    const skuKey = normSku(sku);
     const qty = Number(parsed.newQty);
     if(!sku || !Number.isFinite(qty) || qty < 0) return;
 
@@ -732,13 +757,13 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
       const dc = String(rec?.dateClean || "").slice(0,10);
       const monthKey = dateToMonthKey(dc || new Date().toISOString().slice(0,10));
       const items = rec?.items || rec?.inventory || rec?.products || {};
-      const skus = Object.keys(items || {}).map(normSku).filter(Boolean);
+      const skus = Object.keys(items || {}).map(k => String(k||"").trim()).filter(Boolean);
       for(const sku of skus){
         await removeMovementFromMonth({
           monthKey,
           sku,
           uid: "office-sync",
-          type: "return",
+          type: "returns",
           sourceId: regId
         });
       }
@@ -761,10 +786,14 @@ async function syncReturnRecord(regId, r){
 
     const counts = {};
     for(const p of prods){
-      const sku = normSku(p);
-      counts[sku] = (counts[sku] || 0) + 1;
+      const skuRaw = String(p||"").trim();
+      if(!skuRaw) continue;
+      const key = normSku(skuRaw);
+      if(!counts[key]) counts[key] = { sku: skuRaw, qty: 0 };
+      counts[key].qty += 1;
     }
-    for(const [sku, qty] of Object.entries(counts)){
+    for(const {sku, qty} of Object.values(counts)){
+
       await applyMovementToMonth({ uid:"office-sync", 
         monthKey,
         sku,
@@ -801,7 +830,8 @@ async function syncReturnRecord(regId, r){
 
     // inv may be {SKU:{q:1}} or {SKU:1}
     for(const [k,v] of Object.entries(inv)){
-      const sku = normSku(k);
+      const sku = String(k||"").trim();
+      const skuKey = normSku(sku);
       const qty = (typeof v === "object" && v !== null) ? Number(v.q ?? v.qty ?? 0) : Number(v ?? 0);
       if(!sku || !Number.isFinite(qty) || qty < 0) continue;
       __skusSeen.push(sku);
@@ -856,7 +886,7 @@ async function startOfficeSync(){
     console.log("Office->Inventory sync started.");
 
     // Watch active_batches (root). We filter by dateClean in code so we never miss new batches.
-    const startStr = new Date().toISOString().slice(0,10);
+    const startStr = "2026-02-06";
 
     const batchesRef = rtdbRef(officeRtdb, "active_batches");
 
