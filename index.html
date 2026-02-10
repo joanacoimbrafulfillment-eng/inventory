@@ -616,6 +616,10 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
         // Office sync keeps a cached month doc (st.data). If we write it back wholesale,
         // we can overwrite manual movements added in the UI after the cache was loaded.
         // So we always merge ONLY the office-sync movements into the latest Firestore doc.
+        //
+        // ALSO IMPORTANT (UNDO):
+        // If Office removes a batch, we remove the movement from st.data. The merge must
+        // propagate deletions too (i.e., remove office-sync movements that are no longer present).
         const latest = (await window.fb.getDocData(["months", monthKey])) || { products: [], logs: [] };
         if(!Array.isArray(latest.products)) latest.products = [];
         if(!Array.isArray(latest.logs)) latest.logs = [];
@@ -627,6 +631,25 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
         });
 
         const officeProducts = (st.data && Array.isArray(st.data.products)) ? st.data.products : [];
+
+        // Build desired office-sync movement keys per SKU from the cache
+        const desiredBySku = new Map(); // skuKey -> Set("type||sourceId")
+        officeProducts.forEach(op => {
+          if(!op || !op.sku) return;
+          const key = normSku(op.sku);
+          const officeMovs = Array.isArray(op.movements) ? op.movements : [];
+          const desired = new Set();
+          officeMovs
+            .filter(m => String(m?.uid || "") === "office-sync")
+            .forEach(m => {
+              const t = String(m?.type || "");
+              const sid = String(m?.sourceId || "");
+              desired.add(t + "||" + sid);
+            });
+          desiredBySku.set(key, desired);
+        });
+
+        // First: ensure all SKUs from office cache exist in latest, and upsert desired movements
         officeProducts.forEach(op => {
           if(!op || !op.sku) return;
           const key = normSku(op.sku);
@@ -638,18 +661,43 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
           }
           if(!Array.isArray(lp.movements)) lp.movements = [];
 
+          const desired = desiredBySku.get(key) || new Set();
           const officeMovs = Array.isArray(op.movements) ? op.movements : [];
+
+          // Remove any office-sync movement not in desired (propagate deletions)
+          lp.movements = lp.movements.filter(m => {
+            if(String(m?.uid || "") !== "office-sync") return true;
+            const t = String(m?.type || "");
+            const sid = String(m?.sourceId || "");
+            return desired.has(t + "||" + sid);
+          });
+
+          // Upsert desired office-sync movements (replace exact type+sourceId to avoid duplicates)
           officeMovs
             .filter(m => String(m?.uid || "") === "office-sync")
             .forEach(om => {
               const t = String(om?.type || "");
               const sid = String(om?.sourceId || "");
-              // Replace the exact office movement (type + sourceId) to avoid duplicates
               lp.movements = lp.movements.filter(m =>
                 !(String(m?.uid || "") === "office-sync" && String(m?.type || "") === t && String(m?.sourceId || "") === sid)
               );
               lp.movements.push(om);
             });
+        });
+
+        // Second: for any SKU that exists in latest but not in office cache, remove all office-sync movements
+        latest.products.forEach(lp => {
+          if(!lp || !lp.sku) return;
+          if(!Array.isArray(lp.movements)) lp.movements = [];
+          const key = normSku(lp.sku);
+          const desired = desiredBySku.get(key) || null;
+          lp.movements = lp.movements.filter(m => {
+            if(String(m?.uid || "") !== "office-sync") return true;
+            if(!desired) return false; // SKU not in cache anymore => drop all office-sync
+            const t = String(m?.type || "");
+            const sid = String(m?.sourceId || "");
+            return desired.has(t + "||" + sid);
+          });
         });
 
         await window.fb.setDocData(["months", monthKey], {
@@ -1431,7 +1479,11 @@ onAuthStateChanged(officeAuth, () => {
         return p.initial + added - internal - sum(p,'amsped') - sum(p,'b2b');
     }
 
-    function sum(prod, type) { return prod.movements.filter(m => m.type === type).reduce((acc, curr) => acc + curr.qty, 0); }
+    function sum(prod, type) {
+        const arr = (prod && Array.isArray(prod.movements)) ? prod.movements : [];
+        return arr.filter(m => m && m.type === type)
+                  .reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
+    }
     function save() {
         // Firestore save (debounced)
         allData[currentMonth] = { products, logs };
