@@ -766,53 +766,59 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
 
 
   // --- UNDO logic: if a batch/return is deleted in Office, remove the corresponding movements in Inventory ---
-  async function removeOfficeBatchMovements(batchKey, batchData=null){
+  async function removeOfficeBatchMovements(batchKey){
     try{
-      const idx = (window.__officeBatchInvIndex && window.__officeBatchInvIndex[batchKey]) || (window.__officeBatchMetaCache && window.__officeBatchMetaCache[batchKey]) || null;
-
-      // Determine SKUs (cache preferred; fallback to archived batch.inventory)
+      // Prefer cached index (fast path)
+      let idx = (window.__officeBatchInvIndex && window.__officeBatchInvIndex[batchKey]) || (window.__officeBatchMetaCache && window.__officeBatchMetaCache[batchKey]) || null;
+      let monthKey = idx?.monthKey || null;
       let skus = Array.isArray(idx?.skus) ? idx.skus.slice() : [];
-      if((!skus || !skus.length) && batchData && batchData.inventory){
-        skus = Object.keys(batchData.inventory || {}).map(k => String(k||"").trim()).filter(Boolean);
-      }
-      skus = Array.from(new Set((skus||[]).filter(Boolean)));
 
+      // Fallback: if we don't have cache (e.g. Inventory started after the batch existed),
+      // fetch the archived batch from Office /deleted_batches/<batchKey> and derive SKUs from it.
+      if(!monthKey || !skus.length){
+        try{
+          const archSnap = await get(rtdbRef(officeRtdb, `deleted_batches/${batchKey}`));
+          const arch = archSnap.val() || null;
+          if(arch && arch.inventory){
+            const todayStr = new Date().toISOString().slice(0,10);
+            monthKey = monthKey || dateToMonthKey(todayStr);
+            const inv = arch.inventory || {};
+            skus = Object.keys(inv).map(k => String(k||"").trim()).filter(Boolean);
+          }
+        }catch(e){
+          // ignore; we'll warn below if still missing
+        }
+      }
+
+      if(!monthKey){
+        console.warn("No monthKey for deleted batch; cannot undo", batchKey);
+        return;
+      }
       if(!skus.length){
         console.warn("No SKU list for deleted batch; cannot undo", batchKey);
         return;
       }
 
-      // Determine which month(s) to attempt
-      const monthKeys = [];
-      const cachedMonth = idx?.monthKey;
-      if(cachedMonth) monthKeys.push(cachedMonth);
-
-      // Fallback: try current month and previous month (movements are often applied on 'today')
-      const now = new Date();
-      const cur = now.toISOString().slice(0,7);
-      const prevDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
-      const prev = prevDate.toISOString().slice(0,7);
-      [cur, prev].forEach(mk => { if(mk && !monthKeys.includes(mk)) monthKeys.push(mk); });
-
-      for(const mk of monthKeys){
-        for(const sku of skus){
-          await removeMovementFromMonth({
-            monthKey: mk,
-            sku,
-            uid: "office-sync",
-            type: "picking",
-            sourceId: batchKey
-          });
-        }
+      for(const sku of skus){
+        await removeMovementFromMonth({
+          monthKey,
+          sku,
+          uid: "office-sync",
+          type: "picking",
+          sourceId: batchKey
+        });
       }
 
+      // clean caches
       if(window.__officeBatchInvIndex) delete window.__officeBatchInvIndex[batchKey];
       if(window.__officeBatchMetaCache) delete window.__officeBatchMetaCache[batchKey];
+
       console.log("Undid movements for deleted batch", batchKey);
     }catch(err){
       console.error("removeOfficeBatchMovements failed", err);
     }
   }
+
 
   async function removeOfficeReturnMovements(regId, rec){
     try{
@@ -955,16 +961,6 @@ async function startOfficeSync(){
 
     const batchesRef = rtdbRef(officeRtdb, "active_batches");
 
-    // NEW: also watch archived deletions so we can undo movements even if the batch is removed before we had cache
-    const deletedBatchesRef = rtdbRef(officeRtdb, "deleted_batches");
-    onChildAdded(deletedBatchesRef, (snap)=>{
-      removeOfficeBatchMovements(snap.key, snap.val() || {});
-    });
-    onChildChanged(deletedBatchesRef, (snap)=>{
-      removeOfficeBatchMovements(snap.key, snap.val() || {});
-    });
-
-
     function shouldSyncBatch(b){
       const dc = String(b?.dateClean || "").slice(0,10);
       const ca = String(b?.createdAt || "").slice(0,10);
@@ -1012,6 +1008,20 @@ async function startOfficeSync(){
       // if a batch that was synced gets deleted, undo the movements in Inventory
       removeOfficeBatchMovements(batchKey);
     });
+
+    // Also watch the Office archive. This guarantees undo even if the batch was never cached
+    // (e.g. Inventory opened after the batch existed) and also covers the case where OFF writes
+    // the archive then removes active_batches.
+    const deletedBatchesRef = rtdbRef(officeRtdb, "deleted_batches");
+    onChildAdded(deletedBatchesRef, (snap)=>{
+      const batchKey = snap.key;
+      if(!batchKey) return;
+      if(!window.__officeDeletedBatchProcessed) window.__officeDeletedBatchProcessed = new Set();
+      if(window.__officeDeletedBatchProcessed.has(batchKey)) return;
+      window.__officeDeletedBatchProcessed.add(batchKey);
+      removeOfficeBatchMovements(batchKey);
+    });
+
 
     // Watch returns in registos (only recent by dateClean)
     const regsQ = query(rtdbRef(officeRtdb, "registos"), orderByChild("dateClean"), startAt(startStr));
