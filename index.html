@@ -766,28 +766,46 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
 
 
   // --- UNDO logic: if a batch/return is deleted in Office, remove the corresponding movements in Inventory ---
-  async function removeOfficeBatchMovements(batchKey){
+  async function removeOfficeBatchMovements(batchKey, batchData=null){
     try{
       const idx = (window.__officeBatchInvIndex && window.__officeBatchInvIndex[batchKey]) || (window.__officeBatchMetaCache && window.__officeBatchMetaCache[batchKey]) || null;
-      const monthKey = idx?.monthKey;
-      if(!monthKey){
-        console.warn("No monthKey cached for deleted batch; cannot undo", batchKey);
-        return;
+
+      // Determine SKUs (cache preferred; fallback to archived batch.inventory)
+      let skus = Array.isArray(idx?.skus) ? idx.skus.slice() : [];
+      if((!skus || !skus.length) && batchData && batchData.inventory){
+        skus = Object.keys(batchData.inventory || {}).map(k => String(k||"").trim()).filter(Boolean);
       }
-      const skus = Array.isArray(idx?.skus) ? idx.skus : [];
+      skus = Array.from(new Set((skus||[]).filter(Boolean)));
+
       if(!skus.length){
-        console.warn("No SKU list cached for deleted batch; cannot undo", batchKey);
+        console.warn("No SKU list for deleted batch; cannot undo", batchKey);
         return;
       }
-      for(const sku of skus){
-        await removeMovementFromMonth({
-          monthKey,
-          sku,
-          uid: "office-sync",
-          type: "picking",
-          sourceId: batchKey
-        });
+
+      // Determine which month(s) to attempt
+      const monthKeys = [];
+      const cachedMonth = idx?.monthKey;
+      if(cachedMonth) monthKeys.push(cachedMonth);
+
+      // Fallback: try current month and previous month (movements are often applied on 'today')
+      const now = new Date();
+      const cur = now.toISOString().slice(0,7);
+      const prevDate = new Date(now.getFullYear(), now.getMonth()-1, 1);
+      const prev = prevDate.toISOString().slice(0,7);
+      [cur, prev].forEach(mk => { if(mk && !monthKeys.includes(mk)) monthKeys.push(mk); });
+
+      for(const mk of monthKeys){
+        for(const sku of skus){
+          await removeMovementFromMonth({
+            monthKey: mk,
+            sku,
+            uid: "office-sync",
+            type: "picking",
+            sourceId: batchKey
+          });
+        }
       }
+
       if(window.__officeBatchInvIndex) delete window.__officeBatchInvIndex[batchKey];
       if(window.__officeBatchMetaCache) delete window.__officeBatchMetaCache[batchKey];
       console.log("Undid movements for deleted batch", batchKey);
@@ -936,6 +954,16 @@ async function startOfficeSync(){
     const startStr = "2026-02-06";
 
     const batchesRef = rtdbRef(officeRtdb, "active_batches");
+
+    // NEW: also watch archived deletions so we can undo movements even if the batch is removed before we had cache
+    const deletedBatchesRef = rtdbRef(officeRtdb, "deleted_batches");
+    onChildAdded(deletedBatchesRef, (snap)=>{
+      removeOfficeBatchMovements(snap.key, snap.val() || {});
+    });
+    onChildChanged(deletedBatchesRef, (snap)=>{
+      removeOfficeBatchMovements(snap.key, snap.val() || {});
+    });
+
 
     function shouldSyncBatch(b){
       const dc = String(b?.dateClean || "").slice(0,10);
