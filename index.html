@@ -408,7 +408,7 @@ function doLogin(){
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
-  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
   import { initializeFirestore, doc, getDoc, setDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { getDatabase, ref as rtdbRef, onChildAdded, onChildChanged, onChildRemoved, onValue, query, orderByChild, startAt, get } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
 
@@ -436,6 +436,12 @@ import { getDatabase, ref as rtdbRef, onChildAdded, onChildChanged, onChildRemov
   // Office (Realtime DB) - secondary Firebase app
   const officeApp = initializeApp(officeConfig, "office");
   const officeAuth = getAuth(officeApp);
+
+// Ensure sessions persist so Office sync reconnects automatically on reload
+try { setPersistence(auth, browserLocalPersistence); } catch(e) { /* ignore */ }
+try { setPersistence(officeAuth, browserLocalPersistence); } catch(e) { /* ignore */ }
+
+
   const officeRtdb = getDatabase(officeApp);
 const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
 
@@ -923,21 +929,13 @@ async function syncReturnRecord(regId, r){
   }
 
 async function ensureOfficeAuthInteractive(){
-    if(officeAuth.currentUser) return true;
-    if(!auth.currentUser) return false;
-    const email = auth.currentUser.email || "";
-    const pass = prompt("Para sincronizar com o OFFICE, introduz a password do utilizador " + email + " (login Office).");
-    if(!pass) return false;
-    try{
-      await signInWithEmailAndPassword(officeAuth, email, pass);
-      return !!officeAuth.currentUser;
-    }catch(e){
-      alert("Falha no login do OFFICE: " + (e?.message || e));
-      return false;
-    }
+    // No prompt here. We rely on Firebase Auth persistence:
+    // - First time: user logs in via Login button (logs into both projects)
+    // - Next times: officeAuth.currentUser is restored automatically, and sync starts by itself
+    return !!officeAuth.currentUser;
   }
 
-async function startOfficeSync(){
+  async function startOfficeSync(){
     const badge = document.getElementById("officeSyncBadge");
     const ok = await ensureOfficeAuthInteractive();
     if(!ok){
@@ -1070,6 +1068,13 @@ async function startOfficeSync(){
       await window.startAppAfterAuth(role);
     }
   });
+
+// When the OFFICE auth session becomes available (restored on reload), start sync automatically
+onAuthStateChanged(officeAuth, () => {
+  try { startOfficeSync(); } catch(e) { console.warn(e); }
+});
+
+
 </script>
 
 <script>
