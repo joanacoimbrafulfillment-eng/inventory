@@ -606,13 +606,57 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
       if(!st.dirty) return;
       st.dirty = false;
       try{
+        // IMPORTANT:
+        // Office sync keeps a cached month doc (st.data). If we write it back wholesale,
+        // we can overwrite manual movements added in the UI after the cache was loaded.
+        // So we always merge ONLY the office-sync movements into the latest Firestore doc.
+        const latest = (await window.fb.getDocData(["months", monthKey])) || { products: [], logs: [] };
+        if(!Array.isArray(latest.products)) latest.products = [];
+        if(!Array.isArray(latest.logs)) latest.logs = [];
+
+        const bySku = new Map();
+        latest.products.forEach(p => {
+          if(p && p.sku) bySku.set(normSku(p.sku), p);
+          if(p && !Array.isArray(p.movements)) p.movements = [];
+        });
+
+        const officeProducts = (st.data && Array.isArray(st.data.products)) ? st.data.products : [];
+        officeProducts.forEach(op => {
+          if(!op || !op.sku) return;
+          const key = normSku(op.sku);
+          let lp = bySku.get(key);
+          if(!lp){
+            lp = { sku: op.sku, initial: 0, movements: [], toConfirm: 0 };
+            latest.products.push(lp);
+            bySku.set(key, lp);
+          }
+          if(!Array.isArray(lp.movements)) lp.movements = [];
+
+          const officeMovs = Array.isArray(op.movements) ? op.movements : [];
+          officeMovs
+            .filter(m => String(m?.uid || "") === "office-sync")
+            .forEach(om => {
+              const t = String(om?.type || "");
+              const sid = String(om?.sourceId || "");
+              // Replace the exact office movement (type + sourceId) to avoid duplicates
+              lp.movements = lp.movements.filter(m =>
+                !(String(m?.uid || "") === "office-sync" && String(m?.type || "") === t && String(m?.sourceId || "") === sid)
+              );
+              lp.movements.push(om);
+            });
+        });
+
         await window.fb.setDocData(["months", monthKey], {
-          products: st.data.products || [],
-          logs: st.data.logs || [],
+          products: latest.products,
+          logs: latest.logs,
           updatedAt: new Date().toISOString(),
           updatedBy: "office-sync",
           updatedUid: "office-sync"
         });
+
+        // Refresh cache so subsequent office updates merge from a fresher baseline
+        st.data = latest;
+        st.loaded = true;
       }catch(e){
         console.error("Office sync: failed to write months/"+monthKey, e);
         st.dirty = true; // retry later
