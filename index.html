@@ -2414,6 +2414,104 @@ function processBulkFromSelect(id) {
     function filterTable(tid, sid) { const q = document.getElementById(sid).value.toLowerCase(); document.querySelectorAll(`#${tid} tr`).forEach(r => r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none'); }
     function deleteLog(i) { logs.splice(i,1); save(); flushSaveMonth(); renderAll(); }
     function deleteMove(pi, mi) { products[pi].movements.splice(mi,1); save(); flushSaveMonth(); renderAll(); }
+
+    // Movements tab: delete (keeps Orders&Shipments logs and RECEIVED movements consistent)
+    function deleteLogAndLinkedMovement(li) {
+        const log = (logs || [])[li];
+        if (!log) return;
+        const logId = log.id;
+        // remove linked RECEIVED movement(s)
+        if (logId) {
+            products.forEach(p => {
+                const idx = (p.movements || []).findIndex(m => m && m.logId === logId);
+                if (idx >= 0) p.movements.splice(idx, 1);
+            });
+        }
+        logs.splice(li, 1);
+        save(); flushSaveMonth(); renderAll();
+    }
+
+    function deleteMoveAndLinkedLog(pi, mi) {
+        const p = products[pi];
+        const mv = p?.movements?.[mi];
+        if (!p || !mv) return;
+        const logId = mv.logId;
+        p.movements.splice(mi, 1);
+
+        if (logId) {
+            const li = (logs || []).findIndex(l => l && l.id === logId);
+            if (li >= 0) logs.splice(li, 1);
+        }
+        save(); flushSaveMonth(); renderAll();
+    }
+
+    // key format: M:<productIndex>:<movementIndex> OR L:<logIndex>
+    window.deleteMovementByKey = function(key) {
+        try {
+            if (!key) return;
+            if (!confirm('Apagar este movimento?')) return;
+            const [kind, a, b] = key.split(':');
+            if (kind === 'M') {
+                const pi = Number(a), mi = Number(b);
+                if (Number.isFinite(pi) && Number.isFinite(mi)) deleteMoveAndLinkedLog(pi, mi);
+            } else if (kind === 'L') {
+                const li = Number(a);
+                if (Number.isFinite(li)) deleteLogAndLinkedMovement(li);
+            }
+        } catch (e) {
+            console.error('deleteMovementByKey failed', e);
+            alert('Erro ao apagar movimento. Vê a consola.');
+        }
+    };
+
+    // Movements tab: delete (keeps Orders&Shipments logs and RECEIVED movements consistent)
+    function deleteLogAndLinkedMovement(li) {
+        const log = (logs || [])[li];
+        if (!log) return;
+        const logId = log.id;
+        // remove linked RECEIVED movement(s)
+        if (logId) {
+            products.forEach(p => {
+                const idx = (p.movements || []).findIndex(m => m && m.logId === logId);
+                if (idx >= 0) p.movements.splice(idx, 1);
+            });
+        }
+        logs.splice(li, 1);
+        save(); flushSaveMonth(); renderAll();
+    }
+
+    function deleteMoveAndLinkedLog(pi, mi) {
+        const p = products[pi];
+        const mv = p?.movements?.[mi];
+        if (!p || !mv) return;
+        const logId = mv.logId;
+        p.movements.splice(mi, 1);
+
+        if (logId) {
+            const li = (logs || []).findIndex(l => l && l.id === logId);
+            if (li >= 0) logs.splice(li, 1);
+        }
+        save(); flushSaveMonth(); renderAll();
+    }
+
+    // key format: M:<productIndex>:<movementIndex> OR L:<logIndex>
+    window.deleteMovementByKey = function(key) {
+        try {
+            if (!key) return;
+            if (!confirm('Apagar este movimento?')) return;
+            const [kind, a, b] = key.split(':');
+            if (kind === 'M') {
+                const pi = Number(a), mi = Number(b);
+                if (Number.isFinite(pi) && Number.isFinite(mi)) deleteMoveAndLinkedLog(pi, mi);
+            } else if (kind === 'L') {
+                const li = Number(a);
+                if (Number.isFinite(li)) deleteLogAndLinkedMovement(li);
+            }
+        } catch (e) {
+            console.error('deleteMovementByKey failed', e);
+            alert('Erro ao apagar movimento. Vê a consola.');
+        }
+    };
     function closeModal() { document.getElementById('historyModal').style.display='none'; }
     function resetMonth() { if(confirm("WIPE MONTH?")) { products.forEach(p => p.movements = []); logs=[]; save(); flushSaveMonth(); renderAll(); } }
     function addNewProductMaster() {
@@ -2824,27 +2922,27 @@ Still not matched (${stillMissing.length}): ${stillMissing.slice(0, 20).join(', 
         let rows = [];
 
         // Product movements (from all operational tabs)
-        products.forEach(p => {
-            (p.movements || []).forEach(m => {
+        products.forEach((p, pi) => {
+            (p.movements || []).forEach((m, mi) => {
                 const date = m.date || '';
                 const produto = p.sku;
                 const tab = mapMovementToTab(m.type);
                 const tipo = m.type;
                 const qty = m.qty ?? 0;
                 const note = m.note || '';
-                rows.push({ date, month: currentMonth, produto, tab, tipo, qty, note, by: m.by || '', uid: m.uid || '' });
+                rows.push({ date, month: currentMonth, produto, tab, tipo, qty, note, by: m.by || '', uid: m.uid || '', _src: 'MOVE', _pi: pi, _mi: mi, _key: `M:${pi}:${mi}` });
             });
         });
 
         // Orders & Shipments logs (ORDER / SHIP / RECEIVED)
-        (logs || []).forEach(l => {
+        (logs || []).forEach((l, li) => {
             const date = l.arrivalDate || l.date || '';
             const produto = l.sku || '';
             const tab = 'Orders & Shipments';
             const tipo = l.status || '';
             const qty = (l.status === 'RECEIVED') ? (l.receivedQty ?? l.qty ?? 0) : (l.qty ?? 0);
             const note = l.status === 'RECEIVED' ? 'Arrival: ' + (l.arrivalDate || '') : '';
-            rows.push({ date, month: currentMonth, produto, tab, tipo, qty, note, by: l.by || '', uid: l.uid || '' });
+            rows.push({ date, month: currentMonth, produto, tab, tipo, qty, note, by: l.by || '', uid: l.uid || '', _src: 'LOG', _li: li, _key: `L:${li}` });
         });
 
         // sort
@@ -2910,7 +3008,7 @@ Still not matched (${stillMissing.length}): ${stillMissing.slice(0, 20).join(', 
             summary.innerHTML = `<b>Total records:</b> ${rows.length} &nbsp; | &nbsp; <b>Days:</b> ${days.length}`;
         } else {
             head.innerHTML = `<tr>
-                <th>Date</th><th>Produto</th><th>Separador</th><th>Tipo</th><th>Qty</th><th>By</th><th>Nota</th>
+                <th>Date</th><th>Produto</th><th>Separador</th><th>Tipo</th><th>Qty</th><th>By</th><th>Nota</th><th>Ações</th>
             </tr>`;
             body.innerHTML = rows.map(r => `<tr>
                 <td>${r.date || ''}</td>
@@ -2920,6 +3018,7 @@ Still not matched (${stillMissing.length}): ${stillMissing.slice(0, 20).join(', 
                 <td>${r.qty ?? ''}</td>
                 <td>${(r.by || '').toString()}</td>
                 <td>${(r.note || '').toString()}</td>
+                <td><button class="mini" onclick="deleteMovementByKey('${r._key || ''}')">🗑️</button></td>
             </tr>`).join('');
             summary.innerHTML = `<b>Total records:</b> ${rows.length}`;
         }
