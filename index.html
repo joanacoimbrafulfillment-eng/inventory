@@ -384,7 +384,7 @@
         </div>
 
              <div id="management" class="tab-content">
-            <div class="section-box"><button class="btn btn-excel" onclick="exportFullExcel()">📊 Full XLSX Report</button><button class="btn btn-excel" onclick="exportAllDataXLSX()">📦 Export ALL (XLSX)</button><button class="btn btn-success" onclick="addNewProductMaster()">+ New Product</button><button class="btn btn-danger" onclick="resetMonth()">⚠️ Wipe Month</button><span style="margin-left:12px"></span><input type="file" id="mgmtInitUpload" accept=".csv,.xlsx,.xls" style="display:inline-block; max-width:260px;"><button class="btn btn-success" onclick="importInitQtyFile()">⬆️ Import Init (Produto, Quantidade)</button></div>
+            <div class="section-box"><button class="btn btn-excel" onclick="exportFullExcel()">📊 Full XLSX Report</button><button class="btn btn-excel" onclick="exportAllDataXLSX()">📦 Export ALL (XLSX)</button><button class="btn btn-success" onclick="addNewProductMaster()">+ New Product</button><!-- Wipe Month disabled: button removed --><span style="margin-left:12px"></span><input type="file" id="mgmtInitUpload" accept=".csv,.xlsx,.xls" style="display:inline-block; max-width:260px;"><button class="btn btn-success" onclick="importInitQtyFile()">⬆️ Import Init (Produto, Quantidade)</button></div>
             <div style="overflow-x: auto;"><table><thead><tr><th>Produto</th><th>Init</th><th>Received</th><th>Adj</th><th>Pick</th><th>Amp</th><th>B2B</th><th>Act</th></tr></thead><tbody id="bodyManagement"></tbody></table></div>
         </div>
     </div>
@@ -1134,6 +1134,32 @@ onAuthStateChanged(officeAuth, () => {
     let userRole = 'pt';
     let generalViewItems = [];
     let generalUnsub = null;
+
+    // --- Safety & audit helpers ---
+    function getActiveUser() {
+        try {
+            const u = (typeof auth !== 'undefined' && auth && auth.currentUser) ? auth.currentUser
+                    : (typeof officeAuth !== 'undefined' && officeAuth && officeAuth.currentUser) ? officeAuth.currentUser
+                    : null;
+            return { uid: u ? (u.uid || null) : null, email: u ? (u.email || null) : null };
+        } catch(e) { return { uid: null, email: null }; }
+    }
+
+    async function writeAudit(action, details) {
+        try {
+            if (!window.fb || !currentMonth) return;
+            const u = getActiveUser();
+            const id = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+            await window.fb.setDocData(['months', currentMonth, 'audit', id], {
+                ts: new Date().toISOString(),
+                month: currentMonth,
+                action,
+                details: details || null,
+                by: u.email,
+                uid: u.uid
+            });
+        } catch(e) { /* ignore audit failures */ }
+    }
     // Cross-month open SENT shipments (so receiving next month adds stock in the month received)
     let openSentLogs = []; // [{fromMonth, id, date, sku, qty, by, uid}]
     let saveTimer = null;
@@ -1647,10 +1673,13 @@ onAuthStateChanged(officeAuth, () => {
         try {
             if (!window.fb || !currentMonth) return;
             if (userRole === 'pl') return;
+            const u = getActiveUser();
             const payload = {
                 products: products || [],
                 logs: logs || [],
-                updatedAt: new Date().toISOString()
+                updatedAt: new Date().toISOString(),
+                updatedBy: u.email,
+                updatedUid: u.uid
             };
             await window.fb.setDocData(['months', currentMonth], payload);
             // also publish General view immediately for PL realtime
@@ -2652,7 +2681,10 @@ function processBulkFromSelect(id) {
         }
     };
     function closeModal() { document.getElementById('historyModal').style.display='none'; }
-    function resetMonth() { if(confirm("WIPE MONTH?")) { products.forEach(p => p.movements = []); logs=[]; save(); flushSaveMonth(); renderAll(); } }
+    async function resetMonth() {
+        alert('Wipe Month foi desativado por segurança. Se precisas de limpar dados, contacta o admin.');
+        await writeAudit('WIPE_MONTH_BLOCKED', { note: 'Attempted wipe month' });
+    }
     function addNewProductMaster() {
         const prod = (prompt("Produto:") || '').toString().trim();
         if (!prod) return;
