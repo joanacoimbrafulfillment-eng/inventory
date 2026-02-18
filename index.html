@@ -2114,7 +2114,7 @@ onAuthStateChanged(officeAuth, () => {
             }
 
             body.innerHTML += `<tr>
-                <td>${l.date}</td>
+                <td>${l.sentDate || l.date}</td>
                 <td>${l.sku}</td>
                 <td><span class="badge bg-${badgeClass}">${statusLabel}</span></td>
                 <td>${l.qty}</td>
@@ -2150,6 +2150,7 @@ onAuthStateChanged(officeAuth, () => {
         // Add a RECEIVED log in current month for tracking/exports
         logs.push({
             date,
+            sentDate: src.date,
             sku: src.sku,
             qty: qty,
             status: 'RECEIVED',
