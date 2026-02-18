@@ -384,7 +384,7 @@
         </div>
 
              <div id="management" class="tab-content">
-            <div class="section-box"><button class="btn btn-excel" onclick="exportFullExcel()">📊 Full XLSX Report</button><button class="btn btn-excel" onclick="exportAllDataXLSX()">📦 Export ALL (XLSX)</button><button class="btn btn-success" onclick="addNewProductMaster()">+ New Product</button><span style="margin-left:12px"></span><input type="file" id="mgmtInitUpload" accept=".csv,.xlsx,.xls" style="display:inline-block; max-width:260px;"><button class="btn btn-success" onclick="importInitQtyFile()">⬆️ Import Init (Produto, Quantidade)</button></div>
+            <div class="section-box"><button class="btn btn-excel" onclick="exportFullExcel()">📊 Full XLSX Report</button><button class="btn btn-excel" onclick="exportAllDataXLSX()">📦 Export ALL (XLSX)</button><button class="btn btn-success" onclick="addNewProductMaster()">+ New Product</button><button class="btn btn-danger" onclick="resetMonth()">⚠️ Wipe Month</button><span style="margin-left:12px"></span><input type="file" id="mgmtInitUpload" accept=".csv,.xlsx,.xls" style="display:inline-block; max-width:260px;"><button class="btn btn-success" onclick="importInitQtyFile()">⬆️ Import Init (Produto, Quantidade)</button></div>
             <div style="overflow-x: auto;"><table><thead><tr><th>Produto</th><th>Init</th><th>Received</th><th>Adj</th><th>Pick</th><th>Amp</th><th>B2B</th><th>Act</th></tr></thead><tbody id="bodyManagement"></tbody></table></div>
         </div>
     </div>
