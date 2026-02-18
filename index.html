@@ -456,9 +456,54 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
       return snap.exists() ? snap.data() : null;
     },
     async setDocData(pathParts, data) {
-      const ref = doc(db, ...pathParts);
-      await setDoc(ref, data, { merge: true });
-    },
+  // Coalesce rapid writes per-document to avoid Firestore queued-writes exhaustion.
+  const key = pathParts.join('/');
+  if (!window.fb._pendingByPath) window.fb._pendingByPath = {};
+  if (!window.fb._writeTimers) window.fb._writeTimers = {};
+  const entry = window.fb._pendingByPath[key] || { data: {}, resolvers: [], rejecters: [], inFlight: false, pathParts };
+  // Shallow-merge is enough here (callers already send full 'products'/'logs' etc.)
+  entry.data = Object.assign(entry.data || {}, data || {});
+  entry.pathParts = pathParts;
+  window.fb._pendingByPath[key] = entry;
+
+  return await new Promise((resolve, reject) => {
+    entry.resolvers.push(resolve);
+    entry.rejecters.push(reject);
+
+    // If a write is already in flight for this doc, just queue latest data.
+    if (entry.inFlight) return;
+
+    // Debounce writes to this doc
+    if (window.fb._writeTimers[key]) clearTimeout(window.fb._writeTimers[key]);
+    window.fb._writeTimers[key] = setTimeout(async () => {
+      // Mark in-flight
+      entry.inFlight = true;
+      const toWrite = entry.data;
+      const waitResolvers = entry.resolvers.slice();
+      const waitRejecters = entry.rejecters.slice();
+
+      // Reset pending buffers BEFORE doing network call (so new writes can queue)
+      entry.data = {};
+      entry.resolvers = [];
+      entry.rejecters = [];
+
+      try {
+        const ref = doc(db, ...entry.pathParts);
+        await setDoc(ref, toWrite, { merge: true });
+        waitResolvers.forEach(r => { try { r(); } catch(e){} });
+      } catch (err) {
+        waitRejecters.forEach(rj => { try { rj(err); } catch(e){} });
+      } finally {
+        entry.inFlight = false;
+        // If new data arrived while in-flight, schedule another flush soon
+        if (entry.resolvers.length > 0 || Object.keys(entry.data).length > 0) {
+          if (window.fb._writeTimers[key]) clearTimeout(window.fb._writeTimers[key]);
+          window.fb._writeTimers[key] = setTimeout(() => { window.fb.setDocData(entry.pathParts, {}); }, 500);
+        }
+      }
+    }, 500);
+  });
+},
     async listDocIds(collectionName) {
       const colRef = collection(db, collectionName);
       const snap = await getDocs(colRef);
@@ -1652,7 +1697,7 @@ onAuthStateChanged(officeAuth, () => {
         if (!window.fb || !currentMonth) return;
         if (userRole === 'pl') return; // PL is read-only
         if (saveTimer) clearTimeout(saveTimer);
-        saveTimer = setTimeout(flushSaveMonth, 150);
+        saveTimer = setTimeout(flushSaveMonth, 800);
     }
 
 
@@ -1683,8 +1728,10 @@ onAuthStateChanged(officeAuth, () => {
     function queueSaveGeneralView(immediate=false) {
         if (!window.fb || !currentMonth) return;
         if (userRole === 'pl') return; // PL can't write
+        if (monthClosed) return; // month locked => no writes
+
         if (generalSaveTimer) clearTimeout(generalSaveTimer);
-        const delay = immediate ? 0 : 150;
+        const delay = immediate ? 300 : 800;
         generalSaveTimer = setTimeout(flushSaveGeneralView, delay);
     }
 
@@ -1808,6 +1855,7 @@ onAuthStateChanged(officeAuth, () => {
         try {
             if (!window.fb || !currentMonth) return;
             if (userRole === 'pl') return;
+            if (monthClosed) { console.warn('Month is locked/closed; skipping month write.'); return; }
             const payload = {
                 products: products || [],
                 logs: logs || [],
