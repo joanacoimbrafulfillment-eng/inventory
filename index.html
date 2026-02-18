@@ -87,6 +87,7 @@
         <h2 style="margin:0">Inventory System v44</h2>
         <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
             <div><input type="month" id="monthPicker" class="month-selector" onchange="changeMonth()"></div>
+            <span id="monthStatusBadge" style="font-size:12px; font-weight:700; padding:6px 10px; border-radius:999px; border:1px solid #ddd; background:#f8f9fa; color:#333;">—</span>
 
             <!-- Auth -->
             <div id="authPanel" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
@@ -384,7 +385,7 @@
         </div>
 
              <div id="management" class="tab-content">
-            <div class="section-box"><button class="btn btn-excel" onclick="exportFullExcel()">📊 Full XLSX Report</button><button class="btn btn-excel" onclick="exportAllDataXLSX()">📦 Export ALL (XLSX)</button><button class="btn btn-success" onclick="addNewProductMaster()">+ New Product</button><button class="btn btn-danger" onclick="resetMonth()">⚠️ Wipe Month</button><span style="margin-left:12px"></span><input type="file" id="mgmtInitUpload" accept=".csv,.xlsx,.xls" style="display:inline-block; max-width:260px;"><button class="btn btn-success" onclick="importInitQtyFile()">⬆️ Import Init (Produto, Quantidade)</button></div>
+            <div class="section-box"><button class="btn btn-excel" onclick="exportFullExcel()">📊 Full XLSX Report</button><button class="btn btn-excel" onclick="exportAllDataXLSX()">📦 Export ALL (XLSX)</button><button class="btn btn-success" onclick="addNewProductMaster()">+ New Product</button><button id="btnCloseMonth" class="btn btn-warning" onclick="closeMonth()">🔒 Fechar Mês</button><span style="margin-left:12px"></span><input type="file" id="mgmtInitUpload" accept=".csv,.xlsx,.xls" style="display:inline-block; max-width:260px;"><button class="btn btn-success" onclick="importInitQtyFile()">⬆️ Import Init (Produto, Quantidade)</button></div>
             <div style="overflow-x: auto;"><table><thead><tr><th>Produto</th><th>Init</th><th>Received</th><th>Adj</th><th>Pick</th><th>Amp</th><th>B2B</th><th>Act</th></tr></thead><tbody id="bodyManagement"></tbody></table></div>
         </div>
     </div>
@@ -483,10 +484,10 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
       if (!email) return "none";
       const e = String(email).toLowerCase().trim();
 
-      // ADMIN (PT) — novo padrão igual ao Office
-      if (e.endsWith("@admin.com")) return "pt";
+      // ADMIN (PT): aceita "@admin.com" OU domínio/email que termina em ".pt"
+      if (e.endsWith("@admin.com") || e.endsWith(".pt")) return "pt";
 
-      // PL — mantém como tens hoje
+      // PL: emails que acabam em ".pl" (General-only)
       if (e.endsWith(".pl") || e.endsWith("@pl") || e.endsWith("@pl.pl")) return "pl";
 
       return "none";
@@ -1126,6 +1127,16 @@ onAuthStateChanged(officeAuth, () => {
 </script>
 
 <script>
+  // --- FIX: ensure dateToMonthKey is available in non-module (global) scope ---
+  if (typeof window.dateToMonthKey !== "function") {
+    window.dateToMonthKey = function(dateClean){
+      const d = String(dateClean || "").slice(0,10);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+      return d.slice(0,7);
+    };
+  }
+
+
     const initialSkus = []; // (Deprecated) Product list now comes from the Warehouse upload (tab “🏷️ Warehouse”).
 
     let currentMonth = "", products = [], logs = [], charts = {};
@@ -1139,6 +1150,11 @@ onAuthStateChanged(officeAuth, () => {
     let saveTimer = null;
     let generalSaveTimer = null;
     let lastSavedAt = 0;
+    // Month closing (prevents edits after closing)
+    let monthHasData = false;
+    let monthClosed = false;
+    let monthClosedAt = null;
+    let monthClosedBy = "";
 
     // Called by Firebase Auth module after login
     window.startAppAfterAuth = async function(role) {
@@ -1149,6 +1165,9 @@ onAuthStateChanged(officeAuth, () => {
         currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         const mp = document.getElementById('monthPicker');
         if (mp) mp.value = currentMonth;
+
+        // Update month badge early (will be refreshed after loading month data)
+        updateMonthClosedUI();
 
         // PT-only tools
         const bf = document.getElementById('btnBackfillGeneral');
@@ -1200,6 +1219,117 @@ onAuthStateChanged(officeAuth, () => {
     }
     function currentActorUid() {
         try { return window.fb?.auth?.currentUser?.uid || ''; } catch(e) { return ''; }
+    }
+
+    // --- Month close / lock helpers ---
+    function updateMonthClosedUI() {
+        const badge = document.getElementById('monthStatusBadge');
+        if (!badge) return;
+
+        // Hide badge for PL (General-only)
+        if (userRole === 'pl') { badge.style.display = 'none'; return; }
+        badge.style.display = '';
+
+        const btnClose = document.getElementById('btnCloseMonth');
+
+        if (!currentMonth) {
+            badge.textContent = '—';
+            badge.title = '';
+            badge.style.background = '#f8f9fa';
+            badge.style.color = '#333';
+            badge.style.borderColor = '#ddd';
+            if (btnClose) btnClose.disabled = true;
+            return;
+        }
+
+        if (!monthHasData) {
+            badge.textContent = '⚪ MÊS NÃO INICIALIZADO';
+            badge.title = 'Este mês ainda não foi inicializado.';
+            badge.style.background = '#f8f9fa';
+            badge.style.color = '#555';
+            badge.style.borderColor = '#ddd';
+            if (btnClose) { btnClose.disabled = true; btnClose.textContent = '🔒 Fechar Mês'; }
+            return;
+        }
+
+        if (monthClosed) {
+            badge.textContent = '🔒 MÊS FECHADO';
+            let t = 'Este mês está FECHADO (não permite alterações).';
+            if (monthClosedAt) t += '\nFechado em: ' + new Date(monthClosedAt).toLocaleString();
+            if (monthClosedBy) t += '\nPor: ' + monthClosedBy;
+            badge.title = t;
+            badge.style.background = '#ffecec';
+            badge.style.color = '#8a0000';
+            badge.style.borderColor = '#ffb3b3';
+            if (btnClose) { btnClose.disabled = true; btnClose.textContent = '🔒 Mês Fechado'; }
+        } else {
+            badge.textContent = '🟢 MÊS ABERTO';
+            badge.title = 'Este mês está aberto para edição.';
+            badge.style.background = '#eaffea';
+            badge.style.color = '#0b6b0b';
+            badge.style.borderColor = '#b3ffb3';
+            if (btnClose) { btnClose.disabled = false; btnClose.textContent = '🔒 Fechar Mês'; }
+        }
+    }
+
+    function ensureMonthOpen(actionLabel) {
+        if (userRole === 'pl') { alert('A conta .pl é apenas leitura.'); return false; }
+        if (!currentMonth) { alert('Escolhe um mês primeiro.'); return false; }
+        if (!monthHasData) { alert('Este mês ainda não está inicializado.'); return false; }
+        if (monthClosed) {
+            const a = actionLabel ? (' para ' + actionLabel) : '';
+            alert(`O mês ${currentMonth} está FECHADO${a}.`);
+            return false;
+        }
+        return true;
+    }
+
+    async function closeMonth() {
+        try {
+            if (userRole === 'pl') return alert('A conta .pl é apenas leitura.');
+            if (!currentMonth) return alert('Escolhe um mês primeiro.');
+            if (!monthHasData) return alert('Este mês ainda não está inicializado.');
+            if (monthClosed) return alert('Este mês já está fechado.');
+
+            const msg =
+                `Fechar o mês ${currentMonth}?\n\n` +
+                `Depois de fechar, não será possível alterar movimentos, logs ou Init deste mês.\n` +
+                `(Exportar/consultar continua disponível.)`;
+            if (!confirm(msg)) return;
+
+            if (!window.fb) return alert('Firebase não está pronto.');
+
+            const ts = new Date().toISOString();
+            const payload = {
+                // Backwards-compatible flags:
+                // - `locked` is the authoritative field for Firestore Rules
+                // - `closed` is kept for UI / historical compatibility
+                locked: true,
+                lockedAt: ts,
+                lockedBy: currentActorEmail(),
+                lockedUid: currentActorUid(),
+
+                closed: true,
+                closedAt: ts,
+                closedBy: currentActorEmail(),
+                closedUid: currentActorUid()
+            };
+            await window.fb.setDocData(['months', currentMonth], payload);
+
+            monthClosed = true;
+            monthClosedAt = payload.closedAt;
+            monthClosedBy = payload.closedBy || '';
+            updateMonthClosedUI();
+            alert('Mês fechado ✅');
+        } catch (e) {
+            console.error('closeMonth failed', e);
+            alert('Erro ao fechar mês. Vê a consola.');
+        }
+    }
+
+    // Reset desativado (mantido apenas por compatibilidade; NÃO apaga dados)
+    function resetMonth() {
+        alert('RESET desativado. Usa \"Fechar Mês\".');
     }
 
 
@@ -1268,7 +1398,9 @@ onAuthStateChanged(officeAuth, () => {
         if (currentMonth && allData[currentMonth]) {
             products = reconcileWithMaster(allData[currentMonth].products || []);
             allData[currentMonth].products = products;
-            save(); flushSaveMonth(); renderAll();
+            // Do not rewrite a CLOSED month just because the Warehouse master list changed
+            if (!monthClosed) { save(); flushSaveMonth(); }
+            renderAll();
         } else {
             // No month loaded yet; just keep datalist consistent
             products = reconcileWithMaster(products || []);
@@ -1306,16 +1438,33 @@ onAuthStateChanged(officeAuth, () => {
         }
 
         if (data) {
+            // Month exists
+            monthHasData = true;
+            monthClosed = !!(data.locked || data.closed);
+            monthClosedAt = data.lockedAt || data.closedAt || null;
+            monthClosedBy = data.lockedBy || data.closedBy || '';
+
             products = reconcileWithMaster(data.products || []);
             logs = data.logs || [];
             products.forEach(p => { if(p.toConfirm === undefined) p.toConfirm = 0; });
+
             document.getElementById('initView').style.display = 'none';
             document.getElementById('mainInterface').style.display = 'block';
-            allData[currentMonth] = { products, logs };
+
+            allData[currentMonth] = { products, logs, closed: monthClosed, closedAt: monthClosedAt, closedBy: monthClosedBy };
+
             await loadOpenSentLogsFromPreviousMonths();
+            updateMonthClosedUI();
             renderAll();
             queueSaveGeneralView(true);
         } else {
+            // Month not initialized yet
+            monthHasData = false;
+            monthClosed = false;
+            monthClosedAt = null;
+            monthClosedBy = '';
+            updateMonthClosedUI();
+
             document.getElementById('mainInterface').style.display = 'none';
             document.getElementById('initView').style.display = 'flex';
         }
@@ -1390,6 +1539,7 @@ onAuthStateChanged(officeAuth, () => {
             // Keep status as SENT for historical month snapshot, but mark it as already received elsewhere
             logsArr[idx].receivedInMonth = receivedInMonth;
             logsArr[idx].receivedAt = arrivalDate;
+            logsArr[idx].arrivalDate = arrivalDate; // keep shipment date; set only receipt date
             logsArr[idx].receivedQty = receivedQty;
             logsArr[idx].receivedBy = currentActorEmail();
             logsArr[idx].receivedUid = currentActorUid();
@@ -1481,8 +1631,14 @@ onAuthStateChanged(officeAuth, () => {
 
     function sum(prod, type) {
         const arr = (prod && Array.isArray(prod.movements)) ? prod.movements : [];
-        return arr.filter(m => m && m.type === type)
-                  .reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
+        return arr
+            .filter(m => m && m.type === type)
+            .filter(m => {
+                const d = String(m.date || '').slice(0,10);
+                if (!d) return true; // legacy/no-date => assume current month
+                return dateToMonthKey(d) === currentMonth;
+            })
+            .reduce((acc, curr) => acc + (Number(curr.qty) || 0), 0);
     }
     function save() {
         // Firestore save (debounced)
@@ -1502,10 +1658,15 @@ onAuthStateChanged(officeAuth, () => {
 
     function buildGeneralViewItems() {
         // Returns list: { sku, real, amsped, transit }
+        const logsMonth = (logs || []).filter(l => {
+            const d = String(l.date || '').slice(0,10);
+            const mk = d ? dateToMonthKey(d) : currentMonth;
+            return mk === currentMonth;
+        });
         return (products || []).map(p => {
-            const real = calculateStock(p, 'real', logs);
-            const amsped = calculateStock(p, 'amsped', logs);
-            const transitCurrent = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT' && (!l.receivedInMonth || String(l.receivedInMonth).localeCompare(String(currentMonth)) > 0))
+            const real = calculateStock(p, 'real', logsMonth);
+            const amsped = calculateStock(p, 'amsped', logsMonth);
+            const transitCurrent = logsMonth.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT' && (!l.receivedInMonth || String(l.receivedInMonth).localeCompare(String(currentMonth)) > 0))
                                 .reduce((a,c)=>a + (Number(c.qty)||0), 0);
             const transitPrev = (openSentLogs || []).filter(l => normKey(l.sku) === normKey(p.sku))
                                 .reduce((a,c)=>a + (Number(c.qty)||0), 0);
@@ -1752,19 +1913,26 @@ onAuthStateChanged(officeAuth, () => {
     // v44: PRIORITY SORTING LOGIC
     function renderOrderInventory() {
         const body = document.getElementById('bodyOrderInventory'); body.innerHTML = '';
-        
+        // Only show/use logs that belong to the selected month (YYYY-MM),
+        // except SENT from previous months which are injected via openSentLogs.
+        const logsMonth = (logs || []).filter(l => {
+            const d = String(l.date || '').slice(0,10);
+            const mk = d ? dateToMonthKey(d) : currentMonth;
+            return mk === currentMonth;
+        });
+
         // Calculate priority for each item
         let prioritized = products.map(p => {
             const real = calculateStock(p, 'real', logs);
             const amsped = calculateStock(p, 'amsped', logs);
-            const sentCurrent = logs
+            const sentCurrent = logsMonth
                 .filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'SENT' && (!l.receivedInMonth || String(l.receivedInMonth).localeCompare(String(currentMonth)) > 0))
                 .reduce((a,c)=>a + (Number(c.qty)||0), 0);
             const sentPrev = (openSentLogs || [])
                 .filter(l => normKey(l.sku) === normKey(p.sku))
                 .reduce((a,c)=>a + (Number(c.qty)||0), 0);
             const sent = sentCurrent + sentPrev;
-            const ord = logs.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'ORDER').reduce((a,c)=>a+c.qty,0);
+            const ord = logsMonth.filter(l => normKey(l.sku) === normKey(p.sku) && l.status === 'ORDER').reduce((a,c)=>a+c.qty,0);
             const toConf = p.toConfirm || 0;
             
             // Priority Rule: (Stock Real + Stock Sent) - To Confirm
@@ -1816,6 +1984,7 @@ onAuthStateChanged(officeAuth, () => {
     }
 
     function updateToConfirm(mode) {
+        if (!ensureMonthOpen('alterar To Confirm')) return;
         if(mode === 'single') {
             const s = document.getElementById('confSku').value.trim();
             const q = parseInt(document.getElementById('confQty').value);
@@ -1837,7 +2006,9 @@ onAuthStateChanged(officeAuth, () => {
         save(); flushSaveMonth(); renderAll();
     }
 
-    function clearToConfirm() { if(confirm("Clear ALL 'TO CONFIRM' values?")) { products.forEach(p => p.toConfirm = 0); save(); flushSaveMonth(); renderAll(); } }
+    function clearToConfirm() {
+        if (!ensureMonthOpen('limpar To Confirm')) return;
+        if(confirm("Clear ALL 'TO CONFIRM' values?")) { products.forEach(p => p.toConfirm = 0); save(); flushSaveMonth(); renderAll(); } }
 
     function renderShipments() {
         const body = document.getElementById('bodyShipments');
@@ -1848,6 +2019,9 @@ onAuthStateChanged(officeAuth, () => {
         const combined = [];
 
         (logs || []).forEach((l, i) => {
+            const d = String(l.date || '').slice(0,10);
+            const mk = d ? dateToMonthKey(d) : currentMonth;
+            if (mk !== currentMonth) return; // hide logs from other months
             combined.push({ ...l, __source: 'current', __idx: i, __fromMonth: currentMonth });
         });
 
@@ -1896,7 +2070,7 @@ onAuthStateChanged(officeAuth, () => {
                 <td>${l.sku}</td>
                 <td><span class="badge bg-${badgeClass}">${statusLabel}</span></td>
                 <td>${l.qty}</td>
-                <td>${l.arrivalDate || '-'}</td>
+                <td>${l.arrivalDate || l.receivedAt || l.lastPartialAt || '-'}</td>
                 <td>${(l.note||'-')}</td>
                 <td>${acts}</td>
             </tr>`;
@@ -1904,6 +2078,7 @@ onAuthStateChanged(officeAuth, () => {
     }
 
     async function receivePrevSent(fromMonth, sourceId) {
+        if (!ensureMonthOpen('receber envio')) return;
         // Receive a SENT that was created in a previous month:
         // - Keep the original log as SENT (historical),
         // - Create RECEIVED in the CURRENT month (so inventory increases in the month received),
@@ -1957,6 +2132,7 @@ onAuthStateChanged(officeAuth, () => {
 
 
     function addOrderLog(status) {
+        if (!ensureMonthOpen('adicionar log')) return;
         const prefix = status === 'ORDER' ? 'ord' : 'ship';
         const date = document.getElementById(prefix + 'Date').value;
         const sku = document.getElementById(prefix + 'Sku').value.trim();
@@ -1971,6 +2147,7 @@ onAuthStateChanged(officeAuth, () => {
     }
 
     function processBulkOrderLog(status) {
+        if (!ensureMonthOpen('processar logs em bulk')) return;
         const prefix = status === 'ORDER' ? 'ord' : 'ship';
         const dateEl = document.getElementById(prefix + 'Date');
         const date = dateEl ? dateEl.value : '';
@@ -1992,6 +2169,7 @@ onAuthStateChanged(officeAuth, () => {
     }
 
     function receiveLog(idx) {
+        if (!ensureMonthOpen('receber envio')) return;
         const src = logs[idx];
         if (!src) return;
         if (src.status !== 'SENT') return;
@@ -2049,6 +2227,7 @@ onAuthStateChanged(officeAuth, () => {
     }
 
     function editLog(idx) {
+        if (!ensureMonthOpen('editar log')) return;
         const log = logs[idx];
         const nD = prompt("Date:", log.date); const nS = (prompt("Produto:", log.sku) || '').toString().trim(); const nQ = parseInt(prompt("Qty:", log.qty));
         if(nD && nS && !isNaN(nQ)) {
@@ -2067,7 +2246,13 @@ onAuthStateChanged(officeAuth, () => {
         const types = {'adjust':['adjust'],'returns':['returns','refunds','recovered'],'internal':['customerCare','awards','officeNeeds'],'picking':['picking'],'amsped':['amsped'],'b2b':['b2b']};
         Object.keys(bodyId).forEach(k => {
             const b = document.getElementById(bodyId[k]); if(!b) return; b.innerHTML = '';
-            let moves = []; products.forEach((p,pi)=>p.movements.forEach((m,mi)=>{if(types[k].includes(m.type)) moves.push({...m,pi,mi,sku:p.sku})}));
+            let moves = [];
+            products.forEach((p,pi)=> (p.movements||[]).forEach((m,mi)=> {
+                if (!m) return;
+                const d = String(m.date || '').slice(0,10);
+                if (d && dateToMonthKey(d) !== currentMonth) return; // hide movements from other months
+                if (types[k].includes(m.type)) moves.push({...m,pi,mi,sku:p.sku});
+            }));
             moves.sort((a,b)=>b.mi-a.mi).slice(0,8).forEach(m => {
                 b.innerHTML += `<tr><td>${m.date}</td><td>${m.sku}</td><td>${m.qty}</td><td><button class="btn btn-danger" onclick="deleteMove(${m.pi},${m.mi})">X</button></td></tr>`;
             });
@@ -2075,9 +2260,26 @@ onAuthStateChanged(officeAuth, () => {
     }
 
     function renderManagement() {
-        const bodyM = document.getElementById('bodyManagement'); bodyM.innerHTML = '';
+        const bodyM = document.getElementById('bodyManagement');
+        if (!bodyM) return;
+        bodyM.innerHTML = '';
+
+        const dis = (monthClosed || userRole === 'pl') ? 'disabled' : '';
+
         products.forEach((p, i) => {
-            bodyM.innerHTML += `<tr><td>${p.sku}</td><td><input type="number" class="input-single" style="width:40px" value="${p.initial}" onchange="products[${i}].initial=parseInt(this.value);save(); flushSaveMonth(); renderAll()"></td><td>${sum(p,'RECEIVED')}</td><td>${sum(p,'adjust')}</td><td>${sum(p,'picking')}</td><td>${sum(p,'amsped')}</td><td>${sum(p,'b2b')}</td><td><button onclick="showHistory(${i})">📜</button></td></tr>`;
+            bodyM.innerHTML += `<tr>
+                <td>${p.sku}</td>
+                <td>
+                    <input type="number" class="input-single" style="width:40px" value="${p.initial}" ${dis}
+                        onchange="if(!ensureMonthOpen('alterar Init')) return; products[${i}].initial=parseInt(this.value);save(); flushSaveMonth(); renderAll()">
+                </td>
+                <td>${sum(p,'RECEIVED')}</td>
+                <td>${sum(p,'adjust')}</td>
+                <td>${sum(p,'picking')}</td>
+                <td>${sum(p,'amsped')}</td>
+                <td>${sum(p,'b2b')}</td>
+                <td><button onclick="showHistory(${i})">📜</button></td>
+            </tr>`;
         });
     }
 
@@ -2085,7 +2287,13 @@ onAuthStateChanged(officeAuth, () => {
         const wb = XLSX.utils.book_new();
         const summary = products.map(p => ({ Produto: p.sku, Initial: p.initial, Received: sum(p,'RECEIVED'), Adjust: sum(p,'adjust'), Picking: sum(p,'picking'), Amsped: sum(p,'amsped'), B2B: sum(p,'b2b'), RealStock: calculateStock(p,'real',logs), ToConfirm: p.toConfirm }));
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Summary");
-        const moves = []; products.forEach(p => p.movements.forEach(m => moves.push({ Produto: p.sku, Date: m.date, Type: m.type, Qty: m.qty, Note: m.note||'' })));
+        const moves = [];
+        products.forEach(p => (p.movements || []).forEach(m => {
+            if (!m) return;
+            const d = String(m.date || '').slice(0,10);
+            if (d && dateToMonthKey(d) !== currentMonth) return;
+            moves.push({ Produto: p.sku, Date: m.date, Type: m.type, Qty: m.qty, Note: m.note||'' });
+        }));
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(moves), "All Movements");
         XLSX.writeFile(wb, `Inventory_Report_${currentMonth}.xlsx`);
     }
@@ -2212,12 +2420,15 @@ onAuthStateChanged(officeAuth, () => {
         return out;
     }
 
-    function sumMovementsFromMonthDoc(monthDoc, movementType){
+    function sumMovementsFromMonthDoc(monthDoc, movementType, monthId){
         const prods = monthDoc?.products || [];
         let total = 0;
         prods.forEach(p => {
             (p.movements || []).forEach(m => {
-                if (m?.type === movementType) total += Number(m.qty || 0);
+                if (m?.type !== movementType) return;
+                const d = String(m.date || '').slice(0,10);
+                if (monthId && d && dateToMonthKey(d) !== String(monthId)) return;
+                total += Number(m.qty || 0);
             });
         });
         return total;
@@ -2225,10 +2436,16 @@ onAuthStateChanged(officeAuth, () => {
 
     function rankSkuAcrossMonths(monthDocs, movementType, topN=5){
         const acc = new Map(); // sku -> qty
-        monthDocs.forEach(({data}) => {
+        monthDocs.forEach(({id, data}) => {
+            const monthId = String(id || '');
             (data?.products || []).forEach(p => {
                 let q = 0;
-                (p.movements || []).forEach(m => { if (m?.type === movementType) q += Number(m.qty||0); });
+                (p.movements || []).forEach(m => {
+                    if (m?.type !== movementType) return;
+                    const d = String(m.date || '').slice(0,10);
+                    if (monthId && d && dateToMonthKey(d) !== monthId) return;
+                    q += Number(m.qty||0);
+                });
                 if (q > 0) acc.set(p.sku, (acc.get(p.sku)||0) + q);
             });
         });
@@ -2237,6 +2454,7 @@ onAuthStateChanged(officeAuth, () => {
             .sort((a,b)=>b.q-a.q)
             .slice(0, topN);
     }
+
 
     async function ensureAnalyticsYearOptions(){
         const sel = document.getElementById('analyticsYear');
@@ -2295,7 +2513,7 @@ onAuthStateChanged(officeAuth, () => {
                 });
             } else {
                 months.forEach(({id,data}) => {
-                    const qty = sumMovementsFromMonthDoc(data, 'picking');
+                    const qty = sumMovementsFromMonthDoc(data, 'picking', id);
                     pickingRows.push({ dataset: 'picking_series', period: periodLabel, label: id, qty });
                 });
             }
@@ -2310,7 +2528,8 @@ onAuthStateChanged(officeAuth, () => {
 
             // Dataset 4: Procurement coverage (ALL SKUs)
             const acc = new Map(); // normSku -> {sku, ordered, sent, received}
-            months.forEach(({data}) => {
+            months.forEach(({id, data}) => {
+                const monthId = String(id || '');
                 const logsArr = data?.logs || [];
                 const prods = data?.products || [];
 
@@ -2328,7 +2547,13 @@ onAuthStateChanged(officeAuth, () => {
                     const k = normKey(p.sku);
                     if (!acc.has(k)) acc.set(k, { sku: p.sku, ordered:0, sent:0, received:0 });
                     const row = acc.get(k);
-                    row.received += (p.movements || []).filter(m => m.type === 'RECEIVED')
+                    row.received += (p.movements || [])
+                        .filter(m => m && m.type === 'RECEIVED')
+                        .filter(m => {
+                            const d = String(m.date || '').slice(0,10);
+                            if (!monthId || !d) return true;
+                            return dateToMonthKey(d) === monthId;
+                        })
                         .reduce((a,c)=>a + Number(c.qty||0), 0);
                 });
             });
@@ -2397,7 +2622,7 @@ onAuthStateChanged(officeAuth, () => {
             });
         } else {
             const labels = months.map(x => x.id);
-            const pickingByMonth = months.map(x => sumMovementsFromMonthDoc(x.data, 'picking'));
+            const pickingByMonth = months.map(x => sumMovementsFromMonthDoc(x.data, 'picking', x.id));
 
             charts.daily = new Chart(document.getElementById('dailyChart'), {
                 type: 'bar',
@@ -2493,6 +2718,7 @@ onAuthStateChanged(officeAuth, () => {
     }
 
     function addSingle(type) {
+        if (!ensureMonthOpen('adicionar movimento')) return;
         const k = type.charAt(0).toUpperCase() + type.slice(1);
         const s = document.getElementById(`single${k}Sku`).value.trim(), q = parseInt(document.getElementById(`single${k}Qty`).value), d = document.getElementById(`date${k}`).value;
         const p = findProd(s);
@@ -2500,6 +2726,7 @@ onAuthStateChanged(officeAuth, () => {
     }
 
     function processBulk(type) {
+        if (!ensureMonthOpen('processar movimentos em bulk')) return;
         const k = type.charAt(0).toUpperCase() + type.slice(1);
         const text = document.getElementById('input' + k).value.trim(), date = document.getElementById('date' + k).value;
         text.split('\n').forEach(line => {
@@ -2512,12 +2739,14 @@ onAuthStateChanged(officeAuth, () => {
     }
 
     function addSingleFromSelect(id) {
+        if (!ensureMonthOpen('adicionar movimento')) return;
         const t = document.getElementById('type'+id).value, s = document.getElementById('single'+id+'Sku').value.trim(), q = parseInt(document.getElementById('single'+id+'Qty').value), d = document.getElementById('date'+id).value;
         const p = findProd(s); if(p&&!isNaN(q)) { p.movements.push({type:t, qty:Math.abs(q), date:d, by: currentActorEmail(), uid: currentActorUid() }); save(); flushSaveMonth(); renderAll(); document.getElementById('single'+id+'Sku').value=""; }
     }
 
 
 function processBulkFromSelect(id) {
+        if (!ensureMonthOpen('processar movimentos em bulk')) return;
     // For tabs that have a type <select> (e.g., Returns): apply the selected type to all bulk lines.
     const t = document.getElementById('type'+id).value;
     const textEl = document.getElementById('input'+id);
@@ -2540,22 +2769,54 @@ function processBulkFromSelect(id) {
 
 
     function showHistory(i) {
-        const p = products[i], b = document.getElementById('histBody'); b.innerHTML = '';
-        p.movements.forEach((m, mi) => b.innerHTML += `<tr><td>${m.date}</td><td>${m.type}</td><td>${m.qty}</td><td>${m.note||''}</td><td><button class="btn btn-danger" onclick="products[${i}].movements.splice(${mi},1);save();showHistory(${i});renderAll()">X</button></td></tr>`);
+        const p = products[i];
+        const b = document.getElementById('histBody');
+        if (!p || !b) return;
+        b.innerHTML = '';
+
+        const dis = (monthClosed || userRole === 'pl') ? 'disabled' : '';
+
+        (p.movements || []).forEach((m, mi) => {
+            if (!m) return;
+            const d = String(m.date || '').slice(0,10);
+            if (d && dateToMonthKey(d) !== currentMonth) return; // hide movements from other months
+            const btn = `<button class="btn btn-danger" ${dis} onclick="deleteMove(${i},${mi});showHistory(${i})">X</button>`;
+            b.innerHTML += `<tr><td>${m.date}</td><td>${m.type}</td><td>${m.qty}</td><td>${m.note||''}</td><td>${btn}</td></tr>`;
+        });
+
         document.getElementById('historyModal').style.display = 'block';
     }
 
     function renderMiniDash() {
         const pick = products.reduce((a,p)=>a+sum(p,'picking'),0), sales = products.reduce((a,p)=>a+sum(p,'amsped'),0), rec = products.reduce((a,p)=>a+sum(p,'RECEIVED'),0);
-        document.getElementById('dash-general').innerHTML = `<div class="stat-card"><h4>Received</h4><div class="value">${rec}</div></div><div class="stat-card"><h4>Transit</h4><div class="value" style="color:#000">${logs.filter(l=>l.status==='SENT').reduce((a,c)=>a+c.qty,0)}</div></div>`;
+        document.getElementById('dash-general').innerHTML = `<div class="stat-card"><h4>Received</h4><div class="value">${rec}</div></div><div class="stat-card"><h4>Transit</h4><div class="value" style="color:#000">${(() => {
+            const logsMonth = (logs || []).filter(l => {
+                const d = String(l.date || '').slice(0,10);
+                const mk = d ? dateToMonthKey(d) : currentMonth;
+                return mk === currentMonth;
+            });
+            const transitCurrent = logsMonth.filter(l => l.status === 'SENT' && (!l.receivedInMonth || String(l.receivedInMonth).localeCompare(String(currentMonth)) > 0))
+                .reduce((a,c)=>a + (Number(c.qty)||0), 0);
+            const transitPrev = (openSentLogs || []).reduce((a,c)=>a + (Number(c.qty)||0), 0);
+            return transitCurrent + transitPrev;
+        })()}</div></div>`;
     }
 
     function filterTable(tid, sid) { const q = document.getElementById(sid).value.toLowerCase(); document.querySelectorAll(`#${tid} tr`).forEach(r => r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none'); }
-    function deleteLog(i) { logs.splice(i,1); save(); flushSaveMonth(); renderAll(); }
-    function deleteMove(pi, mi) { products[pi].movements.splice(mi,1); save(); flushSaveMonth(); renderAll(); }
+    function deleteLog(i) {
+        if (!ensureMonthOpen('apagar log')) return;
+        logs.splice(i,1);
+        save(); flushSaveMonth(); renderAll();
+    }
+    function deleteMove(pi, mi) {
+        if (!ensureMonthOpen('apagar movimento')) return;
+        products[pi].movements.splice(mi,1);
+        save(); flushSaveMonth(); renderAll();
+    }
 
     // Movements tab: delete (keeps Orders&Shipments logs and RECEIVED movements consistent)
     function deleteLogAndLinkedMovement(li) {
+        if (!ensureMonthOpen('apagar log')) return;
         const log = (logs || [])[li];
         if (!log) return;
         const logId = log.id;
@@ -2571,6 +2832,7 @@ function processBulkFromSelect(id) {
     }
 
     function deleteMoveAndLinkedLog(pi, mi) {
+        if (!ensureMonthOpen('apagar movimento')) return;
         const p = products[pi];
         const mv = p?.movements?.[mi];
         if (!p || !mv) return;
@@ -2587,6 +2849,7 @@ function processBulkFromSelect(id) {
     // key format: M:<productIndex>:<movementIndex> OR L:<logIndex>
     window.deleteMovementByKey = function(key) {
         try {
+            if (!ensureMonthOpen('apagar movimento')) return;
             if (!key) return;
             if (!confirm('Apagar este movimento?')) return;
             const [kind, a, b] = key.split(':');
@@ -2603,56 +2866,8 @@ function processBulkFromSelect(id) {
         }
     };
 
-    // Movements tab: delete (keeps Orders&Shipments logs and RECEIVED movements consistent)
-    function deleteLogAndLinkedMovement(li) {
-        const log = (logs || [])[li];
-        if (!log) return;
-        const logId = log.id;
-        // remove linked RECEIVED movement(s)
-        if (logId) {
-            products.forEach(p => {
-                const idx = (p.movements || []).findIndex(m => m && m.logId === logId);
-                if (idx >= 0) p.movements.splice(idx, 1);
-            });
-        }
-        logs.splice(li, 1);
-        save(); flushSaveMonth(); renderAll();
-    }
-
-    function deleteMoveAndLinkedLog(pi, mi) {
-        const p = products[pi];
-        const mv = p?.movements?.[mi];
-        if (!p || !mv) return;
-        const logId = mv.logId;
-        p.movements.splice(mi, 1);
-
-        if (logId) {
-            const li = (logs || []).findIndex(l => l && l.id === logId);
-            if (li >= 0) logs.splice(li, 1);
-        }
-        save(); flushSaveMonth(); renderAll();
-    }
-
-    // key format: M:<productIndex>:<movementIndex> OR L:<logIndex>
-    window.deleteMovementByKey = function(key) {
-        try {
-            if (!key) return;
-            if (!confirm('Apagar este movimento?')) return;
-            const [kind, a, b] = key.split(':');
-            if (kind === 'M') {
-                const pi = Number(a), mi = Number(b);
-                if (Number.isFinite(pi) && Number.isFinite(mi)) deleteMoveAndLinkedLog(pi, mi);
-            } else if (kind === 'L') {
-                const li = Number(a);
-                if (Number.isFinite(li)) deleteLogAndLinkedMovement(li);
-            }
-        } catch (e) {
-            console.error('deleteMovementByKey failed', e);
-            alert('Erro ao apagar movimento. Vê a consola.');
-        }
-    };
     function closeModal() { document.getElementById('historyModal').style.display='none'; }
-    function resetMonth() { if(confirm("WIPE MONTH?")) { products.forEach(p => p.movements = []); logs=[]; save(); flushSaveMonth(); renderAll(); } }
+    function resetMonth() { alert('RESET desativado. Usa "Fechar Mês".'); }
     function addNewProductMaster() {
         const prod = (prompt("Produto:") || '').toString().trim();
         if (!prod) return;
@@ -2929,6 +3144,7 @@ function addWarehouseRow() {
     }
 
     function applyInitQtyRows(rows) {
+        if (!ensureMonthOpen('importar Init')) return;
         if (!rows || !rows.length) { alert('No rows found.'); return; }
 
         // Ensure every product in the file exists in the Warehouse master (auto-add if missing)
@@ -3027,6 +3243,7 @@ Still not matched (${stillMissing.length}): ${stillMissing.slice(0, 20).join(', 
     }
 
     function importInitQtyFile() {
+        if (!ensureMonthOpen('importar Init')) return;
         const input = document.getElementById('mgmtInitUpload');
         const file = input && input.files ? input.files[0] : null;
         if (!file) { alert('Choose a CSV or XLSX file first.'); return; }
@@ -3109,6 +3326,14 @@ Still not matched (${stillMissing.length}): ${stillMissing.slice(0, 20).join(', 
         const tabFilter = document.getElementById('movTab')?.value || 'all';
 
         let rows = getAllMovementsBase();
+
+        // Always constrain to the selected month (based on movement.date).
+        // (If a movement has no date, we assume it belongs to the selected month.)
+        rows = rows.filter(r => {
+            const d = String(r.date || '').slice(0,10);
+            if (!d) return true;
+            return dateToMonthKey(d) === currentMonth;
+        });
 
         // filters
         if (from) rows = rows.filter(r => r.date && r.date >= from);
