@@ -2173,6 +2173,7 @@ onAuthStateChanged(officeAuth, () => {
         const src = logs[idx];
         if (!src) return;
         if (src.status !== 'SENT') return;
+
         const qtyRec = parseInt(prompt("Confirmed Qty Received:", src.qty));
         const date = prompt("Arrival Date (YYYY-MM-DD):", new Date().toISOString().split('T')[0]);
         if (isNaN(qtyRec) || !date) return;
@@ -2182,46 +2183,59 @@ onAuthStateChanged(officeAuth, () => {
 
         if (qtyRec > sentQty) return alert("Qty received cannot be higher than Qty SENT.");
 
-        // Add RECEIVED movement (inventory increases in this month)
-        const p = findProd(src.sku);
-        if (p) {
-            p.movements.push({ type: 'RECEIVED', qty: qtyRec, date, logId: src.id, by: currentActorEmail(), uid: currentActorUid() });
-        }
-
-        // Create a RECEIVED log entry (keeps trace + exports)
-        logs.push({
-            date,
-            sku: src.sku,
-            qty: qtyRec,
-            status: 'RECEIVED',
-            id: Date.now(),
-            arrivalDate: date,
-            receivedQty: qtyRec,
-            sourceMonth: currentMonth,
-            sourceId: src.id,
-            note: src.note || '',
-            by: currentActorEmail(),
-            uid: currentActorUid()
-        });
-
         const remaining = sentQty - qtyRec;
 
+        const p = findProd(src.sku);
+        if (!p) return alert('Produto não encontrado no mês atual. Confirma se existe no Warehouse master.');
+
+        // Partial receipt: keep the original log as SENT (remaining qty),
+        // but record this receipt as its own RECEIVED log + its own RECEIVED movement.
         if (remaining > 0) {
-            // Keep the original as SENT with the remaining qty (so you can receive later)
+            const receiptId = Date.now();
+
+            // Movement (inventory increases now)
+            p.movements.push({ type: 'RECEIVED', qty: qtyRec, date, logId: receiptId, by: currentActorEmail(), uid: currentActorUid() });
+
+            // Receipt log (trace/export)
+            logs.push({
+                date,
+                sku: src.sku,
+                qty: qtyRec,
+                status: 'RECEIVED',
+                id: receiptId,
+                arrivalDate: date,
+                receivedQty: qtyRec,
+                sourceMonth: currentMonth,
+                sourceId: src.id,
+                note: src.note || '',
+                by: currentActorEmail(),
+                uid: currentActorUid()
+            });
+
+            // Keep the original as SENT with the remaining qty
             src.qty = remaining;
-            // keep src.status = 'SENT'
+
             // register partials (optional)
             src.partialReceipts = Array.isArray(src.partialReceipts) ? src.partialReceipts : [];
             src.partialReceipts.push({ month: currentMonth, date, qty: qtyRec, by: currentActorEmail(), uid: currentActorUid() });
             src.lastPartialAt = date;
-        } else {
-            // Fully received: mark original as received (historical)
-            src.status = 'RECEIVED';
-            src.arrivalDate = date;
-            src.receivedQty = qtyRec;
-            src.receivedBy = currentActorEmail();
-            src.receivedUid = currentActorUid();
+
+            save(); flushSaveMonth(); renderAll();
+            return;
         }
+
+        // Full receipt: convert the original SENT log to RECEIVED (no extra log entry),
+        // and add exactly ONE RECEIVED movement linked to the original logId.
+        const already = (p.movements || []).some(m => m && m.type === 'RECEIVED' && m.logId === src.id);
+        if (!already) {
+            p.movements.push({ type: 'RECEIVED', qty: qtyRec, date, logId: src.id, by: currentActorEmail(), uid: currentActorUid() });
+        }
+
+        src.status = 'RECEIVED';
+        src.arrivalDate = date;
+        src.receivedQty = qtyRec;
+        src.receivedBy = currentActorEmail();
+        src.receivedUid = currentActorUid();
 
         save(); flushSaveMonth(); renderAll();
     }
@@ -2820,13 +2834,14 @@ function processBulkFromSelect(id) {
         const log = (logs || [])[li];
         if (!log) return;
         const logId = log.id;
-        // remove linked RECEIVED movement(s)
+
+        // remove ALL linked movement(s)
         if (logId) {
             products.forEach(p => {
-                const idx = (p.movements || []).findIndex(m => m && m.logId === logId);
-                if (idx >= 0) p.movements.splice(idx, 1);
+                p.movements = (p.movements || []).filter(m => !(m && m.logId === logId));
             });
         }
+
         logs.splice(li, 1);
         save(); flushSaveMonth(); renderAll();
     }
