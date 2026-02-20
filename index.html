@@ -385,8 +385,7 @@
         </div>
 
              <div id="management" class="tab-content">
-            <div class="section-box"><button class="btn btn-excel" onclick="exportFullExcel()">📊 Full XLSX Report</button><button class="btn btn-excel" onclick="exportAllDataXLSX()">📦 Export ALL (XLSX)</button><button class="btn btn-success" onclick="addNewProductMaster()">+ New Product</button><button id="btnCloseMonth" class="btn btn-warning" onclick="closeMonth()">🔒 Fechar Mês</button>
-<button id="btnMigrateAllMonths" class="btn btn-excel" onclick="migrateAllMonthsToChunked()">📦 Migrar TODOS os meses (fix 1MB)</button><button id="btnRepairChunkedMonths" class="btn btn-warning" onclick="repairChunkedMonths()">🛠️ Reparar meses chunked (sem dados)</button><span style="margin-left:12px"></span><input type="file" id="mgmtInitUpload" accept=".csv,.xlsx,.xls" style="display:inline-block; max-width:260px;"><button class="btn btn-success" onclick="importInitQtyFile()">⬆️ Import Init (Produto, Quantidade)</button></div>
+            <div class="section-box"><button class="btn btn-excel" onclick="exportFullExcel()">📊 Full XLSX Report</button><button class="btn btn-excel" onclick="exportAllDataXLSX()">📦 Export ALL (XLSX)</button><button class="btn btn-success" onclick="addNewProductMaster()">+ New Product</button><button id="btnCloseMonth" class="btn btn-warning" onclick="closeMonth()">🔒 Fechar Mês</button><span style="margin-left:12px"></span><input type="file" id="mgmtInitUpload" accept=".csv,.xlsx,.xls" style="display:inline-block; max-width:260px;"><button class="btn btn-success" onclick="importInitQtyFile()">⬆️ Import Init (Produto, Quantidade)</button></div>
             <div style="overflow-x: auto;"><table><thead><tr><th>Produto</th><th>Init</th><th>Received</th><th>Adj</th><th>Pick</th><th>Amp</th><th>B2B</th><th>Act</th></tr></thead><tbody id="bodyManagement"></tbody></table></div>
         </div>
     </div>
@@ -399,9 +398,7 @@
 <script>
 // Wrappers so inline onclick handlers always exist even with module scoping
 function startOfficeSync(){
-  if (window.__startOfficeSyncImplFn && window.__startOfficeSyncImplFn !== startOfficeSync) {
-    return window.__startOfficeSyncImplFn();
-  }
+  if (window.__startOfficeSyncImpl) return window.__startOfficeSyncImpl();
   console.warn("Office sync not ready yet.");
 }
 function doLogin(){
@@ -413,7 +410,7 @@ function doLogin(){
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
   import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
-  import { initializeFirestore, doc, getDoc, setDoc, onSnapshot, collection, getDocs, deleteField } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+  import { initializeFirestore, doc, getDoc, setDoc, onSnapshot, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 import { getDatabase, ref as rtdbRef, onChildAdded, onChildChanged, onChildRemoved, onValue, query, orderByChild, startAt, get } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
 
   const firebaseConfig = {
@@ -453,155 +450,59 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
   window.fb = {
     auth,
     db,
-
-    // -----------------------------
-    // Chunk-aware Firestore helpers
-    // -----------------------------
     async getDocData(pathParts) {
-      // Special-case months/{YYYY-MM}: if stored in chunks, assemble transparently.
-      if (Array.isArray(pathParts) && pathParts.length === 2 && pathParts[0] === "months") {
-        const monthId = pathParts[1];
-        const baseRef = doc(db, "months", monthId);
-        const baseSnap = await getDoc(baseRef);
-        if (!baseSnap.exists()) return null;
-        const base = baseSnap.data() || {};
-        const isChunked = base.chunked === true || Number(base.productsChunks || 0) > 0 || Number(base.logsChunks || 0) > 0;
-
-        if (!isChunked) return base;
-
-        // Assemble chunks
-        let products = [];
-        let logs = [];
-        try {
-          const chunksCol = collection(db, "months", monthId, "chunks");
-          const chunksSnap = await getDocs(chunksCol);
-          for (const d of chunksSnap.docs) {
-            const id = d.id || "";
-            const cd = d.data() || {};
-            if (id.startsWith("products_") && Array.isArray(cd.items)) products = products.concat(cd.items);
-            if (id.startsWith("logs_") && Array.isArray(cd.items)) logs = logs.concat(cd.items);
-          }
-        } catch (e) {
-          console.warn("Failed to read chunks for month", monthId, e);
-        }
-
-        base.products = Array.isArray(products) ? products : [];
-        base.logs = Array.isArray(logs) ? logs : [];
-        return base;
-      }
-
-      // Default: normal doc read
       const ref = doc(db, ...pathParts);
       const snap = await getDoc(ref);
       return snap.exists() ? snap.data() : null;
     },
-
     async setDocData(pathParts, data) {
-      // Coalesce rapid writes per-document to avoid Firestore queued-writes exhaustion.
-      const key = pathParts.join('/');
-      if (!window.fb._pendingByPath) window.fb._pendingByPath = {};
-      if (!window.fb._writeTimers) window.fb._writeTimers = {};
-      const entry = window.fb._pendingByPath[key] || { data: {}, resolvers: [], rejecters: [], inFlight: false, pathParts };
+  // Coalesce rapid writes per-document to avoid Firestore queued-writes exhaustion.
+  const key = pathParts.join('/');
+  if (!window.fb._pendingByPath) window.fb._pendingByPath = {};
+  if (!window.fb._writeTimers) window.fb._writeTimers = {};
+  const entry = window.fb._pendingByPath[key] || { data: {}, resolvers: [], rejecters: [], inFlight: false, pathParts };
+  // Shallow-merge is enough here (callers already send full 'products'/'logs' etc.)
+  entry.data = Object.assign(entry.data || {}, data || {});
+  entry.pathParts = pathParts;
+  window.fb._pendingByPath[key] = entry;
 
-      // Shallow-merge is enough here (callers already send full 'products'/'logs' etc.)
-      entry.data = Object.assign(entry.data || {}, data || {});
-      entry.pathParts = pathParts;
-      window.fb._pendingByPath[key] = entry;
+  return await new Promise((resolve, reject) => {
+    entry.resolvers.push(resolve);
+    entry.rejecters.push(reject);
 
-      return await new Promise((resolve, reject) => {
-        entry.resolvers.push(resolve);
-        entry.rejecters.push(reject);
+    // If a write is already in flight for this doc, just queue latest data.
+    if (entry.inFlight) return;
 
-        // If a write is already in flight for this doc, just queue latest data.
-        if (entry.inFlight) return;
+    // Debounce writes to this doc
+    if (window.fb._writeTimers[key]) clearTimeout(window.fb._writeTimers[key]);
+    window.fb._writeTimers[key] = setTimeout(async () => {
+      // Mark in-flight
+      entry.inFlight = true;
+      const toWrite = entry.data;
+      const waitResolvers = entry.resolvers.slice();
+      const waitRejecters = entry.rejecters.slice();
 
-        // Debounce writes to this doc
-        if (window.fb._writeTimers[key]) clearTimeout(window.fb._writeTimers[key]);
-        window.fb._writeTimers[key] = setTimeout(async () => {
-          entry.inFlight = true;
+      // Reset pending buffers BEFORE doing network call (so new writes can queue)
+      entry.data = {};
+      entry.resolvers = [];
+      entry.rejecters = [];
 
-          const toWrite = entry.data;
-          const waitResolvers = entry.resolvers.slice();
-          const waitRejecters = entry.rejecters.slice();
-
-          entry.data = {};
-          entry.resolvers = [];
-          entry.rejecters = [];
-
-          try {
-            // Special-case months/{YYYY-MM}: if payload is large (or already chunked), write as chunks.
-            if (Array.isArray(entry.pathParts) && entry.pathParts.length === 2 && entry.pathParts[0] === "months") {
-              const monthId = entry.pathParts[1];
-
-              const baseRef = doc(db, "months", monthId);
-              const baseSnap = await getDoc(baseRef);
-              const base = baseSnap.exists() ? (baseSnap.data() || {}) : {};
-              const alreadyChunked = base.chunked === true || Number(base.productsChunks || 0) > 0 || Number(base.logsChunks || 0) > 0;
-
-              const hasBigArrays = Array.isArray(toWrite.products) || Array.isArray(toWrite.logs);
-              const approxSize = (() => {
-                try { return JSON.stringify(toWrite).length; } catch(e) { return 0; }
-              })();
-
-              const shouldChunk = alreadyChunked || (hasBigArrays && approxSize > 850000);
-
-              if (shouldChunk && hasBigArrays) {
-                const products = Array.isArray(toWrite.products) ? toWrite.products : (base.products || []);
-                const logs = Array.isArray(toWrite.logs) ? toWrite.logs : (base.logs || []);
-
-                // Chunk by count (keeps it simple & safe for size)
-                const chunkArr = (arr, n) => {
-                  const out = [];
-                  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n));
-                  return out;
-                };
-                const prodChunks = chunkArr(products, 120);
-                const logChunks  = chunkArr(logs, 200);
-
-                // Write chunks
-                const chunksCol = collection(db, "months", monthId, "chunks");
-                const writes = [];
-                for (let i = 0; i < prodChunks.length; i++) {
-                  writes.push(setDoc(doc(chunksCol, `products_${i}`), { items: prodChunks[i] }, { merge: false }));
-                }
-                for (let i = 0; i < logChunks.length; i++) {
-                  writes.push(setDoc(doc(chunksCol, `logs_${i}`), { items: logChunks[i] }, { merge: false }));
-                }
-                await Promise.all(writes);
-
-                // Write compact base doc and delete big fields
-                const baseUpdate = Object.assign({}, toWrite);
-                baseUpdate.chunked = true;
-                baseUpdate.productsChunks = prodChunks.length;
-                baseUpdate.logsChunks = logChunks.length;
-                baseUpdate.products = deleteField();
-                baseUpdate.logs = deleteField();
-                await setDoc(baseRef, baseUpdate, { merge: true });
-
-                waitResolvers.forEach(r => { try { r(); } catch(e){} });
-                entry.inFlight = false;
-                return;
-              }
-
-              // If chunked but caller didn't pass big arrays, just do normal merge
-              await setDoc(baseRef, toWrite, { merge: true });
-              waitResolvers.forEach(r => { try { r(); } catch(e){} });
-              entry.inFlight = false;
-              return;
-            }
-
-            // Default: normal merge write
-            const ref = doc(db, ...entry.pathParts);
-            await setDoc(ref, toWrite, { merge: true });
-            waitResolvers.forEach(r => { try { r(); } catch(e){} });
-          } catch (err) {
-            waitRejecters.forEach(r => { try { r(err); } catch(e){} });
-            console.error("Write failed for", key, err);
-          } finally {
-            entry.inFlight = false;
-          }
-        }, 500);
-      });
+      try {
+        const ref = doc(db, ...entry.pathParts);
+        await setDoc(ref, toWrite, { merge: true });
+        waitResolvers.forEach(r => { try { r(); } catch(e){} });
+      } catch (err) {
+        waitRejecters.forEach(rj => { try { rj(err); } catch(e){} });
+      } finally {
+        entry.inFlight = false;
+        // If new data arrived while in-flight, schedule another flush soon
+        if (entry.resolvers.length > 0 || Object.keys(entry.data).length > 0) {
+          if (window.fb._writeTimers[key]) clearTimeout(window.fb._writeTimers[key]);
+          window.fb._writeTimers[key] = setTimeout(() => { window.fb.setDocData(entry.pathParts, {}); }, 500);
+        }
+      }
+    }, 500);
+  });
 },
     async listDocIds(collectionName) {
       const colRef = collection(db, collectionName);
@@ -620,27 +521,6 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
         cb(null);
       });
     },
-
-    async listDocs(pathParts) {
-      const colRef = collection(db, ...pathParts);
-      const snap = await getDocs(colRef);
-      const out = [];
-      snap.forEach(d => out.push({ id: d.id, data: d.data() }));
-      return out;
-    },
-    async deleteFields(pathParts, fieldNames) {
-      const ref = doc(db, ...pathParts);
-      const patch = {};
-      (fieldNames || []).forEach(f => patch[f] = deleteField());
-      return setDoc(ref, patch, { merge: true });
-    },
-    async listMonthIds() {
-      const snap = await getDocs(collection(db, 'months'));
-      const ids = [];
-      snap.forEach(d => ids.push(d.id));
-      return ids;
-    },
-
     signInWithEmailAndPassword: (email, pass) => signInWithEmailAndPassword(auth, email, pass),
     signOut: () => signOut(auth),
   };
@@ -943,74 +823,7 @@ const db = initializeFirestore(app, { experimentalForceLongPolling: true, useFet
     return { sku: m[1], oldQty: Number(m[2]), newQty: Number(m[3]) };
   }
 
-  
-  // --- Pending Office history updates (when history arrives before meta cache) ---
-  if(!window.__pendingOfficeHistory) window.__pendingOfficeHistory = {}; // batchKey -> {historyKey:{msg,parsed}}
-  if(!window.__officeHistoryQueued) window.__officeHistoryQueued = {};   // batchKey -> Set(historyKey)
-
-  function __queueOfficeHistory(batchKey, historyKey, msg, parsed){
-    if(!window.__pendingOfficeHistory[batchKey]) window.__pendingOfficeHistory[batchKey] = {};
-    window.__pendingOfficeHistory[batchKey][historyKey] = { msg, parsed, ts: Date.now() };
-  }
-
-  async function __applyOfficeInvQtyUpdate(batchKey, meta, parsed){
-    const sku = String(parsed.sku||"").trim();
-    const qty = Number(parsed.newQty);
-    if(!sku || !Number.isFinite(qty) || qty < 0) return;
-    await applyMovementToMonth({
-      uid:"office-sync",
-      monthKey: meta.monthKey,
-      sku,
-      type: "picking",
-      sourceId: batchKey,
-      qty,
-      date: meta.date,
-      by: meta.by
-    });
-  }
-
-  let __pendingOfficeHistoryTimer = null;
-  function __scheduleOfficeHistoryRetry(){
-    if(__pendingOfficeHistoryTimer) return;
-    __pendingOfficeHistoryTimer = setTimeout(async () => {
-      __pendingOfficeHistoryTimer = null;
-      try{
-        const cache = window.__officeBatchMetaCache || {};
-        for(const [batchKey, items] of Object.entries(window.__pendingOfficeHistory || {})){
-          const meta = cache[batchKey];
-          if(!meta) continue;
-          const keys = Object.keys(items || {});
-          for(const hk of keys){
-            const it = items[hk];
-            if(!it || !it.parsed) { delete items[hk]; continue; }
-            try{
-              await __applyOfficeInvQtyUpdate(batchKey, meta, it.parsed);
-              // mark as processed
-              if(!window.__officeHistoryProcessed) window.__officeHistoryProcessed = {};
-              if(!window.__officeHistoryProcessed[batchKey]) window.__officeHistoryProcessed[batchKey] = new Set();
-              window.__officeHistoryProcessed[batchKey].add(hk);
-              // clear queued marker
-              if(window.__officeHistoryQueued && window.__officeHistoryQueued[batchKey]) window.__officeHistoryQueued[batchKey].delete(hk);
-              delete items[hk];
-            }catch(e){
-              console.warn("Pending history apply failed", batchKey, hk, e);
-            }
-          }
-          if(Object.keys(items).length === 0) delete window.__pendingOfficeHistory[batchKey];
-        }
-      }catch(e){
-        console.warn("Office history retry loop failed", e);
-      }
-    }, 1500);
-  }
-
-  // Call this whenever batch meta is written, to flush pending history quickly.
-  window.__flushPendingOfficeHistory = function(batchKey){
-    if(window.__pendingOfficeHistory && window.__pendingOfficeHistory[batchKey]){
-      __scheduleOfficeHistoryRetry();
-    }
-  };
-async function syncBatchQtyFromHistory(batchKey, historyKey, historyVal){
+  async function syncBatchQtyFromHistory(batchKey, historyKey, historyVal){
     if(!batchKey || !historyKey || !historyVal) return;
     const msg = historyVal.msg || historyVal.message || "";
     const parsed = parseInvQtyUpdateMsg(msg);
@@ -1024,34 +837,31 @@ async function syncBatchQtyFromHistory(batchKey, historyKey, historyVal){
       return;
     }
 
-    // processed/queued guards (history can arrive before meta)
     if(!window.__officeHistoryProcessed) window.__officeHistoryProcessed = {};
     if(!window.__officeHistoryProcessed[batchKey]) window.__officeHistoryProcessed[batchKey] = new Set();
     if(window.__officeHistoryProcessed[batchKey].has(historyKey)) return;
+    window.__officeHistoryProcessed[batchKey].add(historyKey);
 
-    if(!window.__officeHistoryQueued) window.__officeHistoryQueued = {};
-    if(!window.__officeHistoryQueued[batchKey]) window.__officeHistoryQueued[batchKey] = new Set();
-    if(window.__officeHistoryQueued[batchKey].has(historyKey)) return;
-
+    // Need month/date/by; take from meta cache filled by syncBatchInventory
     const meta = (window.__officeBatchMetaCache && window.__officeBatchMetaCache[batchKey]) || null;
     if(!meta){
-      // queue for retry once meta arrives
-      window.__officeHistoryQueued[batchKey].add(historyKey);
-      __queueOfficeHistory(batchKey, historyKey, msg, parsed);
-      console.warn("Batch meta not ready for history update; queued", batchKey, msg);
-      __scheduleOfficeHistoryRetry();
+      console.warn("Batch meta not ready for history update; skipping for now", batchKey, msg);
       return;
     }
+    const sku = String(parsed.sku||"").trim();
+    const skuKey = normSku(sku);
+    const qty = Number(parsed.newQty);
+    if(!sku || !Number.isFinite(qty) || qty < 0) return;
 
-    try{
-      await __applyOfficeInvQtyUpdate(batchKey, meta, parsed);
-      window.__officeHistoryProcessed[batchKey].add(historyKey);
-    }catch(e){
-      console.warn("History apply failed; queued for retry", batchKey, historyKey, e);
-      window.__officeHistoryQueued[batchKey].add(historyKey);
-      __queueOfficeHistory(batchKey, historyKey, msg, parsed);
-      __scheduleOfficeHistoryRetry();
-    }
+    await applyMovementToMonth({ uid:"office-sync", 
+      monthKey: meta.monthKey,
+      sku,
+      type: "picking",
+      sourceId: batchKey,
+      qty,
+      date: meta.date,
+      by: meta.by
+    });
   }
 
 
@@ -1183,8 +993,6 @@ async function syncReturnRecord(regId, r){
     // cache meta for history-triggered updates
     if(!window.__officeBatchMetaCache) window.__officeBatchMetaCache = {};
     window.__officeBatchMetaCache[batchKey] = { monthKey, date: String(dateClean || '').slice(0,10), by };
-    if(window.__flushPendingOfficeHistory) try{ window.__flushPendingOfficeHistory(batchKey); }catch(e){}
-
 
     const inv = batchData.inventory || {};
     // keep an index so we can undo movements if the batch is deleted in Office
@@ -1681,34 +1489,8 @@ onAuthStateChanged(officeAuth, () => {
             monthClosedAt = data.lockedAt || data.closedAt || null;
             monthClosedBy = data.lockedBy || data.closedBy || '';
 
-            
-            if (data.chunked === true) {
-                const loaded = await loadMonthChunked(currentMonth, data);
-                const loadedProds = loaded.products || [];
-                const loadedLogs  = loaded.logs || [];
-
-                // Fallback: if chunk metadata exists but chunks are missing/empty,
-                // use legacy fields still present on the month doc (common if a previous migration failed mid-way).
-                const legacyProds = Array.isArray(data.products) ? data.products : [];
-                const legacyLogs  = Array.isArray(data.logs) ? data.logs : [];
-
-                const useProds = (loadedProds.length > 0) ? loadedProds : legacyProds;
-                const useLogs  = (loadedLogs.length > 0)  ? loadedLogs  : legacyLogs;
-
-                if (loadedProds.length === 0 && legacyProds.length > 0) {
-                    console.warn('Chunked month but products chunks empty; using legacy products for now. Consider running Repair Migration.');
-                }
-                if (loadedLogs.length === 0 && legacyLogs.length > 0) {
-                    console.warn('Chunked month but logs chunks empty; using legacy logs for now. Consider running Repair Migration.');
-                }
-
-                products = reconcileWithMaster(useProds || []);
-                logs = useLogs || [];
-            } else {
-                products = reconcileWithMaster(data.products || []);
-                logs = data.logs || [];
-            }
-
+            products = reconcileWithMaster(data.products || []);
+            logs = data.logs || [];
             products.forEach(p => { if(p.toConfirm === undefined) p.toConfirm = 0; });
 
             document.getElementById('initView').style.display = 'none';
@@ -2069,196 +1851,17 @@ onAuthStateChanged(officeAuth, () => {
         startGeneralRealtime();
     }
 
-    // -------------------------
-    // Chunked month storage (prevents Firestore 1MiB doc limit)
-    // We store big arrays in subcollection: months/{YYYY-MM}/chunks/{products_i|logs_i}
-    // months/{YYYY-MM} stays small and carries metadata + chunk counts.
-    // -------------------------
-    const MAX_CHUNK_BYTES = 900000; // keep well under 1,048,576 bytes limit
-
-    function approxBytesOf(obj){
-        try { return new TextEncoder().encode(JSON.stringify(obj)).length; }
-        catch(e){ return JSON.stringify(obj).length; }
-    }
-
-    function chunkArrayByBytes(items, maxBytes){
-        const chunks = [];
-        let cur = [];
-        for (const it of (items || [])) {
-            cur.push(it);
-            if (approxBytesOf(cur) > maxBytes && cur.length > 1) {
-                // move last item to next chunk
-                const last = cur.pop();
-                chunks.push(cur);
-                cur = [last];
-            }
-        }
-        if (cur.length) chunks.push(cur);
-        return chunks;
-    }
-
-    async function saveMonthChunked(monthId, productsArr, logsArr, extraMeta) {
-        const prodChunks = chunkArrayByBytes(productsArr || [], MAX_CHUNK_BYTES);
-        const logChunks  = chunkArrayByBytes(logsArr || [], MAX_CHUNK_BYTES);
-
-        // read previous counts (to clean leftovers later)
-        let prev = null;
-        try { prev = await window.fb.getDocData(['months', monthId]); } catch(e) {}
-        const prevPC = prev && prev.productsChunks ? prev.productsChunks : 0;
-        const prevLC = prev && prev.logsChunks ? prev.logsChunks : 0;
-
-        // 1) Write chunks FIRST. If any chunk write fails, we do NOT mark the month as chunked.
-        for (let i=0;i<prodChunks.length;i++){
-            await window.fb.setDocData(['months', monthId, 'chunks', `products_${i}`], { items: prodChunks[i] });
-        }
-        for (let i=0;i<logChunks.length;i++){
-            await window.fb.setDocData(['months', monthId, 'chunks', `logs_${i}`], { items: logChunks[i] });
-        }
-
-        // 2) Delete any leftover old chunks (if arrays shrink)
-        for (let i=prodChunks.length;i<prevPC;i++){
-            await window.fb.deleteFields(['months', monthId, 'chunks', `products_${i}`], ['items']);
-        }
-        for (let i=logChunks.length;i<prevLC;i++){
-            await window.fb.deleteFields(['months', monthId, 'chunks', `logs_${i}`], ['items']);
-        }
-
-        // 3) Now mark the month as chunked (small meta doc)
-        const meta = Object.assign({}, (extraMeta||{}), {
-            chunked: true,
-            productsChunks: prodChunks.length,
-            logsChunks: logChunks.length,
-            updatedAt: new Date().toISOString()
-        });
-        await window.fb.setDocData(['months', monthId], meta);
-
-        // 4) Finally, remove big legacy fields if present (safe now)
-        try {
-            await window.fb.deleteFields(['months', monthId], ['products','logs']);
-        } catch(e){}
-    }
-
-    async function loadMonthChunked(monthId, metaDoc){
-        const pc = metaDoc && metaDoc.productsChunks ? metaDoc.productsChunks : 0;
-        const lc = metaDoc && metaDoc.logsChunks ? metaDoc.logsChunks : 0;
-        let prods = [];
-        let lgs = [];
-        for (let i=0;i<pc;i++){
-            const d = await window.fb.getDocData(['months', monthId, 'chunks', `products_${i}`]);
-            if (d && Array.isArray(d.items)) prods = prods.concat(d.items);
-        }
-        for (let i=0;i<lc;i++){
-            const d = await window.fb.getDocData(['months', monthId, 'chunks', `logs_${i}`]);
-            if (d && Array.isArray(d.items)) lgs = lgs.concat(d.items);
-        }
-        return { products: prods, logs: lgs }
-    }
-
-    // Repair months that were marked as chunked but have missing/empty chunks (common if an earlier migration failed mid-way).
-    async function repairChunkedMonths() {
-        if (!window.fb) return;
-        if (userRole === 'pl') return alert('PL não pode reparar.');
-
-        const ids = (await window.fb.listMonthIds()).filter(id => /^\d{4}-\d{2}$/.test(id)).sort();
-        const btn = document.getElementById('btnRepairChunkedMonths');
-        if (btn) { btn.disabled = true; btn.textContent = '⏳ A reparar...'; }
-
-        let fixed=0, skipped=0, fail=0;
-        for (const monthId of ids){
-            try{
-                const data = await window.fb.getDocData(['months', monthId]);
-                if (!data) { skipped++; continue; }
-                if (data.chunked !== true) { skipped++; continue; }
-
-                // Load chunks; if empty but legacy exists, re-save properly (chunks first, then meta)
-                const loaded = await loadMonthChunked(monthId, data);
-                const hasChunks = (loaded.products && loaded.products.length) || (loaded.logs && loaded.logs.length);
-                const legacyProds = Array.isArray(data.products) ? data.products : [];
-                const legacyLogs  = Array.isArray(data.logs) ? data.logs : [];
-
-                if (hasChunks) { skipped++; continue; }
-                if (legacyProds.length === 0 && legacyLogs.length === 0) { 
-                    console.warn('Chunked month has no chunks and no legacy data; cannot repair:', monthId);
-                    fail++; 
-                    continue; 
-                }
-
-                const meta = {
-                    locked: !!(data.locked || data.closed),
-                    closed: !!(data.closed || data.locked),
-                    lockedAt: data.lockedAt || data.closedAt || null,
-                    closedAt: data.closedAt || data.lockedAt || null,
-                    lockedBy: data.lockedBy || data.closedBy || '',
-                    closedBy: data.closedBy || data.lockedBy || '',
-                    lockedUid: data.lockedUid || data.closedUid || '',
-                    closedUid: data.closedUid || data.lockedUid || '',
-                };
-
-                await saveMonthChunked(monthId, legacyProds, legacyLogs, meta);
-                fixed++;
-            } catch(e){
-                console.error('Repair failed for', monthId, e);
-                fail++;
-            }
-        }
-
-        if (btn) { btn.disabled = false; btn.textContent = '🛠️ Reparar meses chunked (sem dados)'; }
-        alert(`Reparação concluída. Fix=${fixed}, Skipped=${skipped}, Falhas=${fail}.`);
-    }
-// Expose for onclick handlers
-window.repairChunkedMonths = repairChunkedMonths;
- 
-
-    async function migrateAllMonthsToChunked() {
-        if (!window.fb) return;
-        if (userRole === 'pl') return alert('PL não pode migrar.');
-
-        const ids = (await window.fb.listMonthIds()).filter(id => /^\d{4}-\d{2}$/.test(id)).sort();
-        const btn = document.getElementById('btnMigrateAllMonths');
-        if (btn) { btn.disabled = true; btn.textContent = '⏳ A migrar...'; }
-
-        let ok=0, fail=0;
-        for (const monthId of ids){
-            try{
-                const data = await window.fb.getDocData(['months', monthId]);
-                if (!data) continue;
-
-                // already chunked
-                if (data.chunked === true && (data.productsChunks || data.logsChunks)) { ok++; continue; }
-
-                const prod = data.products || [];
-                const lgs  = data.logs || [];
-                const meta = {
-                    locked: !!(data.locked || data.closed),
-                    closed: !!(data.closed || data.locked),
-                    lockedAt: data.lockedAt || data.closedAt || null,
-                    closedAt: data.closedAt || data.lockedAt || null,
-                    lockedBy: data.lockedBy || data.closedBy || '',
-                    closedBy: data.closedBy || data.lockedBy || '',
-                    lockedUid: data.lockedUid || data.closedUid || '',
-                    closedUid: data.closedUid || data.lockedUid || '',
-                };
-
-                await saveMonthChunked(monthId, prod, lgs, meta);
-                ok++;
-            } catch(e){
-                console.error('Migration failed for', monthId, e);
-                fail++;
-            }
-        }
-
-        if (btn) { btn.disabled = false; btn.textContent = '📦 Migrar TODOS os meses (fix 1MB)'; }
-        alert(`Migração concluída. OK=${ok}, Falhas=${fail}.`);
-    }
-
-
     async function flushSaveMonth() {
         try {
             if (!window.fb || !currentMonth) return;
             if (userRole === 'pl') return;
             if (monthClosed) { console.warn('Month is locked/closed; skipping month write.'); return; }
-            const payload = { locked: !!(monthClosed), closed: !!(monthClosed) };
-            await saveMonthChunked(currentMonth, products || [], logs || [], payload);
+            const payload = {
+                products: products || [],
+                logs: logs || [],
+                updatedAt: new Date().toISOString()
+            };
+            await window.fb.setDocData(['months', currentMonth], payload);
             // also publish General view immediately for PL realtime
             await flushSaveGeneralView();
             lastSavedAt = Date.now();
@@ -3896,9 +3499,7 @@ function exportWarehouseCSV() {
 
 
   // Expose module functions for inline onclick handlers
-  window.migrateAllMonthsToChunked = migrateAllMonthsToChunked;
-  window.repairChunkedMonths = repairChunkedMonths;
-  window.__startOfficeSyncImplFn = startOfficeSync;
+  window.__startOfficeSyncImpl = startOfficeSync;
   window.exportOfficeMovementsCSV = exportOfficeMovementsCSV;
   window.exportOfficeMovementsXLSX = exportOfficeMovementsXLSX;
 
